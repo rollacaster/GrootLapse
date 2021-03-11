@@ -6,7 +6,7 @@
             ["node-fetch" :as fetch]
             ["cors" :as cors]))
 
-(def server-name "axidraw")
+(def server-name "localhost")
 
 (comment
   (->(fetch "http://" server-name ":3000/groopse"
@@ -54,6 +54,15 @@
                 (->> (fs/readdirSync (str image-folder "/" name))
                      (map (fn [file-name] (str "http://" server-name ":3000/" image-folder "/" name "/" file-name))))))))
 
+(defn load-all-groopse [req res]
+    (.json res
+         (clj->js (map (fn [folder-name]
+                         {:name folder-name
+                          :image (if (fs/accessSync (str image-folder "/" folder-name "/1.png"))
+                                   (str "http://" server-name ":3000/" image-folder "/default.jpg")
+                                   (str "http://" server-name ":3000/" image-folder "/" folder-name "/1.png"))})
+                       (fs/readdirSync image-folder)))))
+
 (defn init []
   (let [app (express)]
     (.use app (cors))
@@ -61,6 +70,7 @@
     (.use app (.static express "."))
     (.post app "/groopse" create-groopse)
     (.get app "/groopse/:name" load-groopse)
+    (.get app "/groopse/" load-all-groopse)
     (let [server (.createServer http app)]
       (.listen server 3000
                (fn [err]

@@ -1,11 +1,16 @@
 (ns grootlapse.core
-  (:require [reagent.dom :as dom]
-            [reagent.core :as r]))
-(defonce stream-server (atom nil))
-(defonce state (r/atom {:groopse {}}))
-(def server-name "axidraw")
+  (:require [reagent.core :as r]
+            [reagent.dom :as dom]))
 
+(defonce stream-server (atom nil))
+(defonce state (r/atom {}))
+(def server-name "localhost")
+(def server (str "http://" server-name ":3000"))
 (defn app []
+  (-> (js/fetch (str server "/groopse"))
+      (.then (fn [res] (.json res)))
+      (.then (fn [json] (swap! state assoc :groopse (js->clj json :keywordize-keys true))))
+      (.catch prn))
   (let [new-name (r/atom "")]
     (fn []
       [:div.flex.h-screen.flex-col
@@ -15,6 +20,13 @@
         [:button.absolute.bg-green-800.text-white.px-2.py-4.text-3xl.rounded-full.shadow-xl
          {:style {:right "1rem" :bottom "1rem"}}
          "Add"]
+        [:div.flex.flex-wrap
+         (map
+          (fn [{:keys [name image]}]
+            [:div.p-4 {:key image :class "w-1/2"}
+             [:img.rounded-xl.mb-1 {:src image}]
+             [:div.font-bold.pl-1 name]])
+          (:groopse @state))]
         (comment
           [:button {:on-click
                     (fn []
