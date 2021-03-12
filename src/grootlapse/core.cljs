@@ -5,7 +5,7 @@
 
 (defonce stream-server (atom nil))
 (defonce state (r/atom {}))
-(def server-name "localhost")
+(def server-name "192.168.178.20")
 (def server (str "http://" server-name ":3000"))
 
 (defn groopse-overview [{:keys [name image]}]
@@ -13,6 +13,7 @@
    [:> (.-Link router) {:class "w-1/2 p-4" :to (str "/" name)}
     [:img.rounded-xl.mb-1 {:src image}]
     [:div.font-bold.pl-1 name]]])
+
 
 (defn groopse-details [props]
   [:div.p-4
@@ -27,11 +28,11 @@
   (let [new-name (r/atom "")]
     (fn []
       [:> (.-BrowserRouter router)
-       [:div.flex.h-screen.flex-col
+       [:div.flex.flex-col.h-full
         [:header.bg-green-700.text-white
          [:div.max-w-4xl.mx-auto.w-full.text-center.py-2.text-lg "GrootLapse"]]
         [:main.flex-1.relative
-         [:button.absolute.bg-green-800.text-white.px-2.py-4.text-3xl.rounded-full.shadow-xl
+         [:button.absolute.bg-green-800.text-white.px-2.py-4.text-3xl.rounded-full.shadow-xl.border.border-black
           {:style {:right "1rem" :bottom "1rem"}}
           "Add"]
          [:> (.-Route router)

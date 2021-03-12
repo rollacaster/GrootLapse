@@ -6,7 +6,7 @@
             ["node-fetch" :as fetch]
             ["cors" :as cors]))
 
-(def server-name "localhost")
+(def server-name "192.168.178.20")
 
 (comment
   (->(fetch "http://" server-name ":3000/groopse"
