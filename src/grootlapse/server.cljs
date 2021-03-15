@@ -4,6 +4,7 @@
             ["fs" :as fs]
             ["pi-camera" :as camera]
             ["node-fetch" :as fetch]
+            ["child_process" :as process]
             ["cors" :as cors]))
 
 (def server-name "axidraw")
@@ -24,8 +25,11 @@
 (defonce server-ref (volatile! nil))
 (defonce state (atom {:active nil}))
 (def image-folder "images")
+(def video-folder "videos")
 (defn imagefile-name [number]
   (.padStart (str number ".jpg") 9 "0"))
+(defn videofile-name [number]
+  (.padStart (str number ".mp4") 9 "0"))
 (defn create-groopse [req res]
   (let [image-number (atom 1)
         name (.-name (.-body req))
@@ -56,7 +60,14 @@
                      (map (fn [file-name] (str "http://" server-name ":3000/" image-folder "/" name "/" file-name))))))))
 
 (defn stitch-groopse [req res]
-  (let [name (.-name ^js (.-params req))]
+  (let [name (.-name ^js (.-params req))
+        path (str video-folder "/" name)]
+    (fs/mkdirSync path #js {:recursive true})
+    (let [res (process/spawn
+               "ffmpeg" (into-array ["-r" "10" "-i" (str image-folder "/" name "/%5d.jpg") "-r" "10" "-vcodec" "libx264" "-crf" "20" "-g" "15"
+                                     (str path "/" (videofile-name 0))]))]
+      (prn (.toString (.-stderr res))))
+    (prn "end")
     (.json res name)))
 
 (defn load-all-groopse [req res]
