@@ -1,4 +1,4 @@
-(ns grootlapse.raspberrypi.core
+(ns grootlapse.server
   (:require ["express" :as express]
             ["http" :as http]
             ["fs" :as fs]
@@ -6,7 +6,7 @@
             ["node-fetch" :as fetch]
             ["cors" :as cors]))
 
-(def server-name "192.168.178.20")
+(def server-name "axidraw")
 
 (comment
   (->(fetch "http://" server-name ":3000/groopse"
@@ -24,21 +24,22 @@
 (defonce server-ref (volatile! nil))
 (defonce state (atom {:active nil}))
 (def image-folder "images")
-
+(defn imagefile-name [number]
+  (.padStart (str number ".jpg") 9 "0"))
 (defn create-groopse [req res]
-  (let [image-number (atom 0)
+  (let [image-number (atom 1)
         name (.-name (.-body req))
         path (str js/__dirname "/" image-folder "/" name "/" )]
     (fs/mkdirSync path #js {:recursive true})
     (let [interval (js/setInterval
                     (fn []
                       (-> (.snap (new camera #js {:mode "photo"
-                                                  :output (str path @image-number ".jpg")
+                                                  :output (str path (imagefile-name @image-number))
                                                   :width 640
                                                   :height 480
                                                   :nopreview true}))
                           (.then (fn []
-                                   (prn "snap" (str path @image-number ".jpg"))
+                                   (prn "snap" (str path (imagefile-name @image-number)))
                                    (swap! image-number inc)))
                           (.catch (fn [e]
                                     (prn e)
@@ -54,13 +55,21 @@
                 (->> (fs/readdirSync (str image-folder "/" name))
                      (map (fn [file-name] (str "http://" server-name ":3000/" image-folder "/" name "/" file-name))))))))
 
+(defn stitch-groopse [req res]
+  (let [name (.-name ^js (.-params req))]
+    (.json res name)))
+
 (defn load-all-groopse [req res]
     (.json res
          (clj->js (map (fn [folder-name]
                          {:name folder-name
-                          :image (if (fs/accessSync (str image-folder "/" folder-name "/1.png"))
+                          :image (if (fs/accessSync (str image-folder "/" folder-name "/00001.jpg"))
                                    (str "http://" server-name ":3000/" image-folder "/default.jpg")
-                                   (str "http://" server-name ":3000/" image-folder "/" folder-name "/1.png"))})
+                                   (str "http://" server-name ":3000/" image-folder "/" folder-name "/00001.jpg"))
+                          :images (map
+                                   (fn [file-name]
+                                     (str "http://" server-name ":3000/" image-folder "/" folder-name "/" file-name))
+                                   (fs/readdirSync (str image-folder "/" folder-name)))})
                        (fs/readdirSync image-folder)))))
 
 (defn init []
@@ -70,6 +79,7 @@
     (.use app (.static express "."))
     (.post app "/groopse" create-groopse)
     (.get app "/groopse/:name" load-groopse)
+    (.get app "/groopse/:name/stitch" stitch-groopse)
     (.get app "/groopse/" load-all-groopse)
     (let [server (.createServer http app)]
       (.listen server 3000

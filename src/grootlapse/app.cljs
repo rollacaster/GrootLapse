@@ -1,11 +1,11 @@
-(ns grootlapse.core
+(ns grootlapse.app
   (:require [reagent.core :as r]
             [reagent.dom :as dom]
             ["react-router-dom" :as router]))
 
 (defonce stream-server (atom nil))
 (defonce state (r/atom {}))
-(def server-name "192.168.178.20")
+(def server-name "axidraw")
 (def server (str "http://" server-name ":3000"))
 
 (defn groopse-overview [{:keys [name image]}]
@@ -16,9 +16,18 @@
 
 
 (defn groopse-details [props]
-  [:div.p-4
-   [:button.mb-4 {:on-click (:goBack (:history props))} "< Back"]
-   [:h1.text-2xl (:name (:params (:match props)))]])
+  (let [name (:name (:params (:match props)))
+        {:keys [images]} (some (fn [groopse] (when(= name (:name groopse)) groopse))(:groopse @state))]
+    [:div.p-4
+     [:button.mb-4 {:on-click (:goBack (:history props))} "< Back"]
+     [:h1.text-2xl.mb-4 (:name (:params (:match props)))]
+     [:h2.text-xl.mb-2 "Video"]
+     [:h2.text-xl.mb-2 "Bilder"]
+     [:div.flex.flex-wrap.justify-between
+      (map
+       (fn [image]
+         [:img.mb-2.border {:key image :src image :style {:width "49%"}}])
+       images)]]))
 
 (defn app []
   (-> (js/fetch (str server "/groopse"))
@@ -91,4 +100,20 @@
 
 (dom/render [app] (js/document.getElementById "app"))
 (defn init [])
+
+(comment
+  (->(js/fetch (str "http://" server-name ":3000/groopse")
+               (clj->js
+                {:method "POST"
+                 :headers {"Content-type" "application/json"}
+                 :body (js/JSON.stringify (clj->js {:name "flower2"}))}))
+     (.catch prn))
+  (->(js/fetch (str "http://" server-name ":3000/groopse/flower2/stitch")
+               (clj->js
+                {:headers {"Content-type" "application/json"}}))
+     (.then (fn [res] (.json res)))
+     (.then prn)
+     (.catch prn))
+  (js/console.log "hi")
+  )
 
