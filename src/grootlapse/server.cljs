@@ -80,7 +80,11 @@
                           :images (map
                                    (fn [file-name]
                                      (str "http://" server-name ":3000/" image-folder "/" folder-name "/" file-name))
-                                   (fs/readdirSync (str image-folder "/" folder-name)))})
+                                   (fs/readdirSync (str image-folder "/" folder-name)))
+                          :videos (map
+                                   (fn [file-name]
+                                     (str "http://" server-name ":3000/" video-folder "/" folder-name "/" file-name))
+                                   (fs/readdirSync (str video-folder "/" folder-name)))})
                        (fs/readdirSync image-folder)))))
 
 (defn init []

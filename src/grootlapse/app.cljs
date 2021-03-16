@@ -15,19 +15,31 @@
     [:div.font-bold.pl-1 name]]])
 
 
-(defn groopse-details [props]
-  (let [name (:name (:params (:match props)))
-        {:keys [images]} (some (fn [groopse] (when(= name (:name groopse)) groopse))(:groopse @state))]
-    [:div.p-4
-     [:button.mb-4 {:on-click (:goBack (:history props))} "< Back"]
-     [:h1.text-2xl.mb-4 (:name (:params (:match props)))]
-     [:h2.text-xl.mb-2 "Video"]
-     [:h2.text-xl.mb-2 "Bilder"]
-     [:div.flex.flex-wrap.justify-between
-      (map
-       (fn [image]
-         [:img.mb-2.border {:key image :src image :style {:width "49%"}}])
-       images)]]))
+(defn groopse-details []
+  (let [video-errors (r/atom #{})]
+    (fn [props]
+      (let [name (:name (:params (:match props)))
+            {:keys [images videos]} (some (fn [groopse] (when(= name (:name groopse)) groopse))(:groopse @state))]
+        [:div.p-4
+         [:button.mb-4 {:on-click (:goBack (:history props))} "< Back"]
+         [:h1.text-2xl.mb-4 (:name (:params (:match props)))]
+         [:h2.text-xl.mb-2 "Video"]
+         [:div.flex.flex-wrap.justify-between
+          (doall
+           (map
+            (fn [video]
+              (when-not (@video-errors video)
+                [:video.mb-2.border.w-100
+                 {:key video :src video :controls true
+                  :onError (fn [] (prn "error"
+                                      (swap! video-errors conj video)))}]))
+            videos))]
+         [:h2.text-xl.mb-2 "Bilder"]
+         [:div.flex.flex-wrap.justify-between
+          (map
+           (fn [image]
+             [:img.mb-2.border {:key image :src image :style {:width "49%"}}])
+           images)]]))))
 
 (defn app []
   (-> (js/fetch (str server "/groopse"))
