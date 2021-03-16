@@ -8,38 +8,65 @@
 (def server-name "axidraw")
 (def server (str "http://" server-name ":3000"))
 
+(defn button
+  ([children]
+   [button {} children])
+  ([{:keys [on-click pending]} children]
+   [:button.bg-green-700.text-white.p-2.rounded-xl.shadow.font-bold
+    {:on-click (when-not pending on-click) :type "button"}
+    (if pending "Lade" children)]))
+
 (defn groopse-overview [{:keys [name image]}]
   [:<> {:key image}
    [:> (.-Link router) {:class "w-1/2 p-4" :to (str "/" name)}
     [:img.rounded-xl.mb-1 {:src image}]
     [:div.font-bold.pl-1 name]]])
 
-
 (defn groopse-details []
-  (let [video-errors (r/atom #{})]
+  (let [video-errors (r/atom #{})
+        details-state (r/atom nil)]
     (fn [props]
       (let [name (:name (:params (:match props)))
-            {:keys [images videos]} (some (fn [groopse] (when(= name (:name groopse)) groopse))(:groopse @state))]
+            {:keys [images videos]} (some (fn [groopse] (when (= name (:name groopse)) groopse)) (:groopse @state))]
         [:div.p-4
          [:button.mb-4 {:on-click (:goBack (:history props))} "< Back"]
          [:h1.text-2xl.mb-4 (:name (:params (:match props)))]
-         [:h2.text-xl.mb-2 "Video"]
-         [:div.flex.flex-wrap.justify-between
-          (doall
+         [:div.mb-8
+          [:h2.text-xl.mb-2 "Video"]
+          [:div.flex.flex-wrap.justify-between
+           (doall
+            (map
+             (fn [video]
+               (when-not (@video-errors video)
+                 [:video.mb-2.border.w-100
+                  {:key video :src video :controls true
+                   :onError (fn [] (prn "error"
+                                       (swap! video-errors conj video)))}]))
+             videos))]]
+         [:div
+          [:div.flex.items-center.justify-between.mb-6
+           [:h2.text-xl "Bilder"]
+           [button {:pending (= @details-state "STITCHING")
+                    :on-click
+                    (fn []
+                      (reset! details-state "STITCHING")
+                      (->(js/fetch (str "http://" server-name ":3000/groopse/" name "/stitch")
+                                   (clj->js
+                                    {:headers {"Content-type" "application/json"}}))
+                         (.then (fn [res] (.json res)))
+                         (.then (fn [video]
+                                  (reset! details-state nil)
+                                  (swap! state update :groopse (fn [groopses] (map (fn [groopse]
+                                                                                    (if (= (:name groopse) name)
+                                                                                      (update groopse :videos conj video)
+                                                                                      groopse))
+                                                                                  groopses)))))))}
+            "Video erstellen"]]
+          [:div.flex.flex-wrap.justify-between
            (map
-            (fn [video]
-              (when-not (@video-errors video)
-                [:video.mb-2.border.w-100
-                 {:key video :src video :controls true
-                  :onError (fn [] (prn "error"
-                                      (swap! video-errors conj video)))}]))
-            videos))]
-         [:h2.text-xl.mb-2 "Bilder"]
-         [:div.flex.flex-wrap.justify-between
-          (map
-           (fn [image]
-             [:img.mb-2.border {:key image :src image :style {:width "49%"}}])
-           images)]]))))
+            (fn [image]
+              [:img.mb-2.border {:key image :src image :style {:width "49%"}}])
+            images)]]]))))
 
 (defn app []
   (-> (js/fetch (str server "/groopse"))
@@ -118,14 +145,12 @@
                (clj->js
                 {:method "POST"
                  :headers {"Content-type" "application/json"}
-                 :body (js/JSON.stringify (clj->js {:name "flower2"}))}))
+                 :body (js/JSON.stringify (clj->js {:name "flower3"}))}))
      (.catch prn))
-  (->(js/fetch (str "http://" server-name ":3000/groopse/flower2/stitch")
+  (->(js/fetch (str "http://" server-name ":3000/groopse/flower3/stitch")
                (clj->js
                 {:headers {"Content-type" "application/json"}}))
      (.then (fn [res] (.json res)))
      (.then prn)
-     (.catch prn))
-  (js/console.log "hi")
-  )
+     (.catch prn)))
 

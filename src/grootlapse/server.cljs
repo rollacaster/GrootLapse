@@ -5,7 +5,8 @@
             ["pi-camera" :as camera]
             ["node-fetch" :as fetch]
             ["child_process" :as process]
-            ["cors" :as cors]))
+            ["cors" :as cors]
+            [clojure.string :as str]))
 
 (def server-name "axidraw")
 
@@ -59,16 +60,28 @@
                 (->> (fs/readdirSync (str image-folder "/" name))
                      (map (fn [file-name] (str "http://" server-name ":3000/" image-folder "/" name "/" file-name))))))))
 
+(def stitch-interval (atom nil))
 (defn stitch-groopse [req res]
   (let [name (.-name ^js (.-params req))
         path (str video-folder "/" name)]
     (fs/mkdirSync path #js {:recursive true})
-    (let [res (process/spawn
-               "ffmpeg" (into-array ["-r" "10" "-i" (str image-folder "/" name "/%5d.jpg") "-r" "10" "-vcodec" "libx264" "-crf" "20" "-g" "15"
-                                     (str path "/" (videofile-name 0))]))]
-      (prn (.toString (.-stderr res))))
-    (prn "end")
-    (.json res name)))
+    (let [video-nr (->> (fs/readdirSync (str video-folder "/" name))
+                        (map (fn [filename] (js/parseInt (str/replace filename ".mp4" ""))))
+                        (filter (fn [video-nr] (not (js/isNaN video-nr))))
+                        sort
+                        last
+                        inc)]
+      (process/spawnSync
+       "ffmpeg" (into-array ["-r" "10" "-i" (str image-folder "/" name "/%5d.jpg") "-r" "10" "-vcodec" "libx264" "-crf" "20" "-g" "15"
+                             (str path "/" (videofile-name video-nr))]))
+      (if (fs/accessSync (str path "/" (videofile-name video-nr)))
+        (reset! stitch-interval
+                (js/setInterval (fn [] (when-not (fs/accessSync (str path "/" (videofile-name video-nr)))
+                                        (js/clearInterval @stitch-interval)
+                                        (reset! stitch-interval nil)
+                                        (.json res (str path "/" (videofile-name video-nr)))))
+                                1000))
+        (.json res (str "http://" server-name ":3000/" path "/" (videofile-name video-nr)))))))
 
 (defn load-all-groopse [req res]
     (.json res
