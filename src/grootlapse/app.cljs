@@ -11,9 +11,10 @@
 (defn button
   ([children]
    [button {} children])
-  ([{:keys [on-click pending]} children]
+  ([{:keys [on-click pending class style]} children]
    [:button.bg-green-700.text-white.p-2.rounded-xl.shadow.font-bold
-    {:on-click (when-not pending on-click) :type "button"}
+    {:on-click (when-not pending on-click) :type "button"
+     :class class :style style}
     (if pending "Lade" children)]))
 
 (defn groopse-overview [{:keys [name image]}]
@@ -68,6 +69,49 @@
               [:img.mb-2.border {:key image :src image :style {:width "49%"}}])
             images)]]]))))
 
+(def groopse-new
+  (with-meta
+    (fn []
+      (let [preview (r/atom false)]
+        (fn []
+          [:form.p-4
+           [:div.pb-8
+            [:label.block.mb-2.pl-2 {:for "name"}"Name"]
+            [:input.border.rounded.w-full.p-2.font-bold
+             {:id "name" :value "Flower" :on-change (fn [])}]]
+           [:div.relative.pb-16
+            [:div.mb-2.pl-2 "Preview"]
+            [button {:class "absolute"
+                     :style {:top "50%" :left "50%" :transform "translate(-50%,-50%)"
+                             :display (when @preview "none")}
+                     :on-click (fn []
+                                 (.playStream ^js @stream-server)
+                                 (reset! preview true))}
+             "Preview"]
+            [:canvas.w-full.border.rounded
+             {:ref (fn [ref]
+                     (when (and ref (= nil @stream-server))
+                       (let [uri (str "ws://axidraw:8080")
+                             wsavc (js/window.WSAvcPlayer. ref "webgl" 1 35)]
+                         (.connect wsavc uri)
+                         (reset! stream-server wsavc))))}]]
+           ;; interval?
+           ;; duration?
+           ;; space calculation?
+           [:div.w-full.flex.justify-end
+            [button
+             {:on-click (fn []
+                          (->(js/fetch (str "http://" server-name ":3000/groopse")
+                                       (clj->js
+                                        {:method "POST"
+                                         :headers {"Content-type" "application/json"}
+                                         :body (js/JSON.stringify (clj->js {:name "flower"}))}))
+                             (.catch prn)))}
+             "Erstellen"]]])))
+    {:component-will-unmount (fn []
+                               (.stopStream ^js @stream-server)
+                               (reset! stream-server nil))}))
+
 (defn app []
   (-> (js/fetch (str server "/groopse"))
       (.then (fn [res] (.json res)))
@@ -80,16 +124,22 @@
         [:header.bg-green-700.text-white
          [:div.max-w-4xl.mx-auto.w-full.text-center.py-2.text-lg "GrootLapse"]]
         [:main.flex-1.relative
-         [:button.absolute.bg-green-800.text-white.px-2.py-4.text-3xl.rounded-full.shadow-xl.border.border-black
-          {:style {:right "1rem" :bottom "1rem"}}
-          "Add"]
          [:> (.-Route router)
           {:path "/" :exact true}
           [:div.flex.flex-wrap
+           [:> (.-Link router)
+            {:style {:right "1rem" :bottom "1rem"}
+             :class "absolute bg-green-800 text-white px-2 py-4 text-3xl rounded-full shadow-xl border border-black"
+             :to "/new"}
+            "Add"]
            (map groopse-overview (:groopse @state))]]
-         [:> (.-Route router)
-          {:path "/:name"
-           :render (fn [props] (r/as-element [groopse-details (js->clj props :keywordize-keys true)]))}]
+         [:> (.-Switch router)
+          [:> (.-Route router)
+           {:path "/new"
+            :render (fn [props] (r/as-element [groopse-new (js->clj props :keywordize-keys true)]))}]
+          [:> (.-Route router)
+           {:path "/:name"
+            :render (fn [props] (r/as-element [groopse-details (js->clj props :keywordize-keys true)]))}]]
          (comment
            [:button {:on-click
                      (fn []
