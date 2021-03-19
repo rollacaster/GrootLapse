@@ -22,7 +22,7 @@
    [:> (.-Link router) {:class "w-1/2 p-4" :to (str "/" name)}
     [:img.rounded-xl.mb-1 {:src image}]
     [:div.font-bold.pl-1 name]]])
-
+(def canvas-ref (atom nil))
 (defn groopse-details []
   (let [video-errors (r/atom #{})
         details-state (r/atom nil)]
@@ -85,16 +85,27 @@
                      :style {:top "50%" :left "50%" :transform "translate(-50%,-50%)"
                              :display (when @preview "none")}
                      :on-click (fn []
-                                 (.playStream ^js @stream-server)
-                                 (reset! preview true))}
+                                 (when (and @canvas-ref (= nil @stream-server))
+                                   (let [uri (str "ws://" server-name ":3000")
+                                         wsavc (js/window.WSAvcPlayer. @canvas-ref "webgl" 1 35)]
+                                     (.connect wsavc uri)
+                                     (reset! stream-server wsavc)))
+                                 (js/setTimeout
+                                  (fn []
+                                    (.playStream ^js @stream-server)
+                                    (reset! preview true))
+                                  1000))}
              "Preview"]
             [:canvas.w-full.border.rounded
              {:ref (fn [ref]
-                     (when (and ref (= nil @stream-server))
-                       (let [uri (str "ws://axidraw:8080")
-                             wsavc (js/window.WSAvcPlayer. ref "webgl" 1 35)]
-                         (.connect wsavc uri)
-                         (reset! stream-server wsavc))))}]]
+                     (reset! canvas-ref ref)
+                     )}]]
+           [button
+            {:on-click (fn []
+                         (.stopStream ^js @stream-server)
+                         (reset! preview false)
+                         (reset! stream-server nil))}
+            "Cancel"]
            ;; interval?
            ;; duration?
            ;; space calculation?

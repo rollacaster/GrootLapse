@@ -6,7 +6,9 @@
             ["node-fetch" :as fetch]
             ["child_process" :as process]
             ["cors" :as cors]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            ["ws" :as ws]
+            ["stream-split" :as stream-split]))
 
 (def server-name "axidraw")
 
@@ -100,6 +102,55 @@
                                    (fs/readdirSync (str video-folder "/" folder-name)))})
                        (fs/readdirSync image-folder)))))
 
+
+(def width 960)
+(def height  540)
+(def nal-separator (new js/Buffer #js [0 0 0 1]))
+(def stream-server (atom {:wss nil :read-stream nil}))
+(defn broadcast [data]
+  (doseq [socket (.-clients (:wss @stream-server))]
+    (when-not ^js (.-buzy socket)
+      (set! ^js (.-buzy socket) true)
+      (set! ^js (.-buzy socket) false)
+
+      (.send socket
+             (.concat js/Buffer #js [nal-separator data])
+             #js {:binary true}
+             (fn [] (set! ^js (.-buzy socket) false))))))
+(defn start-stream []
+  (let [fps 12
+        command (str "raspivid -t 0 -o - -w " width " -h " height " -fps " fps " -pf baseline")
+        [command & params] (str/split command #" ")
+        streamer (process/spawn command (clj->js params))]
+    (swap! stream-server assoc :read-stream streamer)
+    (.on streamer "exit" (fn [code] (prn "exit raspivid" code)))
+    (.on (.pipe (.-stdout streamer) (new stream-split nal-separator)) "data"
+         broadcast)))
+
+(defn pause-stream []
+  (if (:read-stream @stream-server)
+    ^js (.kill (:read-stream @stream-server))
+    (prn "Trying to pause non existant stream")))
+
+(defn end-stream []
+  (if (:read-stream @stream-server)
+    ^js (.kill (:read-stream @stream-server))
+    (prn "Trying to end non existant stream")))
+
+(defn new-client [socket]
+  (.send socket (js/JSON.stringify #js {:action "init"
+                                        :width width
+                                        :height height}))
+  ^js (.on socket "message"
+       (fn [data]
+         (let [[action] (str/split (str data) " ")]
+           (case action
+             "REQUESTSTREAM" (start-stream)
+             "STOPSTREAM" (pause-stream)))))
+  ^js (.on socket "close"
+       (fn []
+         (end-stream))))
+
 (defn init []
   (let [app (express)]
     (.use app (cors))
@@ -109,7 +160,9 @@
     (.get app "/groopse/:name" load-groopse)
     (.get app "/groopse/:name/stitch" stitch-groopse)
     (.get app "/groopse/" load-all-groopse)
-    (let [server (.createServer http app)]
+    (let [server (.createServer http app)
+          {:keys [wss]} (swap! stream-server assoc :wss (new (.-Server ws) #js {:server server}))]
+      ^js (.on wss "connection" new-client)
       (.listen server 3000
                (fn [err]
                  (if err
