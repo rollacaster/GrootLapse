@@ -37,10 +37,14 @@
   (let [video-errors (r/atom #{})
         details-state (r/atom nil)
         delete-mode (r/atom nil)
-        deleting (r/atom nil)]
+        deleting (r/atom nil)
+        show-all-images (r/atom nil)
+        show-all-videos (r/atom nil)]
     (fn [props]
       (let [name (:name (:params (:match props)))
-            {:keys [images videos]} (some (fn [groopse] (when (= name (:name groopse)) groopse)) (:groopse @state))]
+            {:keys [images videos]} (some (fn [groopse] (when (= name (:name groopse)) groopse)) (:groopse @state))
+            max-videos 1
+            max-images 5]
         [:div.p-4.relative
          [:button.mb-4 {:on-click (:goBack (:history props))} "< Back"]
          [:div.flex.justify-between
@@ -67,7 +71,11 @@
                      {:key video :src video :controls true
                       :onError (fn [] (prn "error"
                                           (swap! video-errors conj video)))}]))
-                videos))]])]
+                (take-last (if @show-all-videos (count videos) max-videos) videos)))]
+             [:div.w-full.flex.justify-center.pb-5
+              (when (and (not @show-all-videos) (> (count videos) max-videos))
+                [button {:on-click (fn [] (reset! show-all-videos true))}
+                 "alle anzeigen"])]])]
          [:div
           [:div.flex.items-center.justify-between.mb-6
            [:h2.text-xl "Bilder"]
@@ -91,7 +99,11 @@
            (map
             (fn [image]
               [:img.mb-2.border {:key image :src image :style {:width "49%"}}])
-            images)]]
+            (take (if @show-all-images (count images) max-images) images))]
+          [:div.w-full.flex.justify-center.pb-5
+           (when (and (not @show-all-images) (> (count images) max-images))
+             [button {:on-click (fn [] (reset! show-all-images true))}
+              "alle anzeigen"])]]
          (when @delete-mode
            [:div.px-5.fixed.w-full
             {:style {:top "50%" :left "50%" :transform "translate(-50%,-50%)"}}
