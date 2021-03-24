@@ -128,7 +128,8 @@
     (fn []
       (let [preview (r/atom false)
             name (r/atom "")
-            error (r/atom "")]
+            error (r/atom "")
+            creating (r/atom nil)]
         (fn [props]
           [:form.p-4
            [:div.pb-8
@@ -160,18 +161,21 @@
            ;; space calculation?
            [:div.w-full.flex.justify-end
             [button
-             {:on-click (fn []
+             {:pending @creating
+              :on-click (fn []
                           (if (> (count @name) 0)
                             (do
                               (when @stream-server
                                 (.stopStream ^js @stream-server)
                                 (reset! stream-server nil))
+                              (reset! creating true)
                               (->(js/fetch (str "http://" server-name ":3000/groopse")
                                            (clj->js
                                             {:method "POST"
                                              :headers {"Content-type" "application/json"}
                                              :body (js/JSON.stringify (clj->js {:name @name}))}))
                                  (.then (fn [res]
+                                          (reset! creating false)
                                           (if (.-ok res)
                                             (do
                                               (load-groopse)
