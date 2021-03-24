@@ -24,15 +24,36 @@
     [:img.rounded-xl.mb-1 {:src image}]
     [:div.font-bold.pl-1 name]]])
 (def canvas-ref (atom nil))
+
+(defn load-groopse []
+  (-> (js/fetch (str server "/groopse"))
+      (.then (fn [res] (.json res)))
+      (.then (fn [json] (swap! state merge (js->clj json :keywordize-keys true))))
+      (.catch (fn [e]
+                (prn e)
+                (swap! state assoc :groopse "ERROR")))))
+
 (defn groopse-details []
   (let [video-errors (r/atom #{})
-        details-state (r/atom nil)]
+        details-state (r/atom nil)
+        delete-mode (r/atom nil)
+        deleting (r/atom nil)]
     (fn [props]
       (let [name (:name (:params (:match props)))
             {:keys [images videos]} (some (fn [groopse] (when (= name (:name groopse)) groopse)) (:groopse @state))]
-        [:div.p-4
+        [:div.p-4.relative
          [:button.mb-4 {:on-click (:goBack (:history props))} "< Back"]
-         [:h1.text-2xl.mb-4 (:name (:params (:match props)))]
+         [:div.flex.justify-between
+          [:h1.text-2xl.mb-4 (:name (:params (:match props)))]
+          (when (= name (:name (:active @state)))
+            [:div
+             [:span.text-xl.pr-3 "Live"]
+             [button {:on-click (fn []
+                                  (->(js/fetch (str "http://" server-name ":3000/groopse/active/stop")
+                                               (clj->js
+                                                {:method "POST"
+                                                 :headers {"Content-type" "application/json"}}))
+                                     (.then (fn [] (swap! state assoc :active nil)))))} "Stop"]])]
          [:div.mb-8
           (when (> (count videos) 0)
             [:<>
@@ -70,15 +91,38 @@
            (map
             (fn [image]
               [:img.mb-2.border {:key image :src image :style {:width "49%"}}])
-            images)]]]))))
+            images)]]
+         (when @delete-mode
+           [:div.px-5.fixed.w-full
+            {:style {:top "50%" :left "50%" :transform "translate(-50%,-50%)"}}
+            [:div.bg-green-100.rounded.p-4
+             [:div.pb-8
+              (str "Den " @delete-mode " sicher löschen?")]
+             [:div.flex.w-full
+              [button {:class "w-1/2 mr-1"
+                       :pending @deleting
+                       :on-click (fn []
+                                   (reset! deleting true)
+                                   (->
+                                    (js/fetch (str "http://" server-name ":3000/groopse/" name)
+                                                (clj->js
+                                                 {:headers {"Content-type" "application/json"}
+                                                  :method "DELETE"}))
+                                      (.then (fn [res]
+                                               (reset! deleting false)
+                                               (if (.-ok res)
+                                                 (do
+                                                   ((:push (:history props)) "/")
+                                                   (load-groopse))
+                                                 (prn  "Etwas ist schiefgelaufen!"))))))}
+               "OK"]
+              [button {:class "w-1/2 ml-1"
+                       :on-click (fn [] (reset! delete-mode nil))}
+               "Abbrechen"]]]])
+         [button {:on-click (fn [] (reset! delete-mode (str "Groopse " name)))}
+          "Löschen"]]))))
 
-(defn load-groopse []
-  (-> (js/fetch (str server "/groopse"))
-      (.then (fn [res] (.json res)))
-      (.then (fn [json] (swap! state merge (js->clj json :keywordize-keys true))))
-      (.catch (fn [e]
-                (prn e)
-                (swap! state assoc :groopse "ERROR")))))
+
 (def groopse-new
   (with-meta
     (fn []

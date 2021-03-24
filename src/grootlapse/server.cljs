@@ -40,9 +40,14 @@
                           :width 640
                           :height 480
                           :nopreview true})))
-(defn stop-active-groopse [_ res]
+
+
+(defn stop-active-groopse []
   (swap! state assoc :active nil)
-  (js/clearInterval @current-interval)
+  (js/clearInterval @current-interval))
+
+(defn stop-active-groopse-handler [_ res]
+  (stop-active-groopse)
   (.sendStatus ^js res 200))
 
 (defn create-groopse [req res]
@@ -78,6 +83,16 @@
                   (fs/rmdirSync video-path #js {:recursive true})
                   (.status ^js res 500)
                   (.send res (js->clj {:error (.-message e)})))))))
+
+(defn delete-groopse [req res]
+  (let [name (.-name ^js (.-params req))
+        path (str js/__dirname "/" image-folder "/" name "/" )
+        video-path (str js/__dirname "/" video-folder "/" name "/" )]
+    (when (= name (:name (:active @state)))
+      (stop-active-groopse))
+    (fs/rmdirSync path #js {:recursive true})
+    (fs/rmdirSync video-path #js {:recursive true})
+    (.sendStatus ^js res 200)))
 
 (defn load-groopse [req res]
   (let [name (.-name ^js (.-params req))]
@@ -186,8 +201,9 @@
     (.use app (.json express))
     (.use app (.static express "."))
     (.post app "/groopse" create-groopse)
-    (.post app "/groopse/active/stop" stop-active-groopse)
+    (.post app "/groopse/active/stop" stop-active-groopse-handler)
     (.get app "/groopse/:name" load-groopse)
+    (.delete app "/groopse/:name" delete-groopse)
     (.get app "/groopse/:name/stitch" stitch-groopse)
     (.get app "/groopse/" load-all-groopse)
     (let [server (.createServer http app)
