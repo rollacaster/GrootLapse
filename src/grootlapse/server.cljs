@@ -73,7 +73,11 @@
                       (reset! current-interval interval)))
                   10000)
                  (.sendStatus ^js res 200)))
-        (.catch (fn [] 500)))))
+        (.catch (fn [e]
+                  (fs/rmdirSync path #js {:recursive true})
+                  (fs/rmdirSync video-path #js {:recursive true})
+                  (.status ^js res 500)
+                  (.send res (js->clj {:error (.-message e)})))))))
 
 (defn load-groopse [req res]
   (let [name (.-name ^js (.-params req))]
