@@ -34,17 +34,19 @@
          [:button.mb-4 {:on-click (:goBack (:history props))} "< Back"]
          [:h1.text-2xl.mb-4 (:name (:params (:match props)))]
          [:div.mb-8
-          [:h2.text-xl.mb-2 "Video"]
-          [:div.flex.flex-wrap.justify-between
-           (doall
-            (map
-             (fn [video]
-               (when-not (@video-errors video)
-                 [:video.mb-2.border.w-100
-                  {:key video :src video :controls true
-                   :onError (fn [] (prn "error"
-                                       (swap! video-errors conj video)))}]))
-             videos))]]
+          (when (> (count videos) 0)
+            [:<>
+             [:h2.text-xl.mb-2 "Video"]
+             [:div.flex.flex-wrap.justify-between
+              (doall
+               (map
+                (fn [video]
+                  (when-not (@video-errors video)
+                    [:video.mb-2.border.w-100
+                     {:key video :src video :controls true
+                      :onError (fn [] (prn "error"
+                                          (swap! video-errors conj video)))}]))
+                videos))]])]
          [:div
           [:div.flex.items-center.justify-between.mb-6
            [:h2.text-xl "Bilder"]
@@ -70,6 +72,13 @@
               [:img.mb-2.border {:key image :src image :style {:width "49%"}}])
             images)]]]))))
 
+(defn load-groopse []
+  (-> (js/fetch (str server "/groopse"))
+      (.then (fn [res] (.json res)))
+      (.then (fn [json] (swap! state merge (js->clj json :keywordize-keys true))))
+      (.catch (fn [e]
+                (prn e)
+                (swap! state assoc :groopse "ERROR")))))
 (def groopse-new
   (with-meta
     (fn []
@@ -109,13 +118,21 @@
             [button
              {:on-click (fn []
                           (if (> (count @name) 0)
-                            (->(js/fetch (str "http://" server-name ":3000/groopse")
-                                         (clj->js
-                                          {:method "POST"
-                                           :headers {"Content-type" "application/json"}
-                                           :body (js/JSON.stringify (clj->js {:name @name}))}))
-                               (.then (fn [] ((:push (:history props)) "/")))
-                               (.catch (fn [] (reset! error "Etwas ist schiefgelaufen!"))))
+                            (do
+                              (when @stream-server
+                                (.stopStream ^js @stream-server)
+                                (reset! stream-server nil))
+                              (->(js/fetch (str "http://" server-name ":3000/groopse")
+                                           (clj->js
+                                            {:method "POST"
+                                             :headers {"Content-type" "application/json"}
+                                             :body (js/JSON.stringify (clj->js {:name @name}))}))
+                                 (.then (fn [res]
+                                          (if (.-ok res)
+                                            (do
+                                              (load-groopse)
+                                              ((:push (:history props)) "/"))
+                                            (reset! error "Etwas ist schiefgelaufen!"))))))
                             (reset! error "Bitte Namen Eintragen")))}
              "Erstellen"]]
            (when @error [:div.red @error])])))
@@ -123,7 +140,6 @@
                                (when @stream-server
                                  (.stopStream ^js @stream-server)
                                  (reset! stream-server nil)))}))
-
 (defn overview []
   [:div.flex.flex-wrap
    [:> (.-Link router)
@@ -162,12 +178,7 @@
       (map groopse-overview (:groopse @state))])])
 
 (defn app []
-  (-> (js/fetch (str server "/groopse"))
-      (.then (fn [res] (.json res)))
-      (.then (fn [json] (swap! state merge (js->clj json :keywordize-keys true))))
-      (.catch (fn [e]
-                (prn e)
-                (swap! state assoc :groopse "ERROR"))))
+  (load-groopse)
   (fn []
     [:> (.-BrowserRouter router)
      [:div.flex.flex-col.h-full
