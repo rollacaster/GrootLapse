@@ -1,4 +1,3 @@
-192.168.178.20
 (ns grootlapse.server
   (:require ["express" :as express]
             ["http" :as http]
@@ -41,6 +40,10 @@
                           :width 640
                           :height 480
                           :nopreview true})))
+(defn stop-active-groopse [_ res]
+  (swap! state assoc :active nil)
+  (js/clearInterval @current-interval)
+  (.sendStatus ^js res 200))
 
 (defn create-groopse [req res]
   (let [image-number (atom 1)
@@ -142,6 +145,7 @@
         [command & params] (str/split command #" ")
         streamer (process/spawn command (clj->js params))]
     (swap! stream-server assoc :read-stream streamer)
+    (.on streamer "error" (fn [error] (prn "error raspivid" error)))
     (.on streamer "exit" (fn [code] (prn "exit raspivid" code)))
     (.on (.pipe (.-stdout streamer) (new stream-split nal-separator)) "data"
          broadcast)))
@@ -170,12 +174,15 @@
        (fn []
          (end-stream))))
 
+
+
 (defn init []
   (let [app (express)]
     (.use app (cors))
     (.use app (.json express))
     (.use app (.static express "."))
     (.post app "/groopse" create-groopse)
+    (.post app "/groopse/active/stop" stop-active-groopse)
     (.get app "/groopse/:name" load-groopse)
     (.get app "/groopse/:name/stitch" stitch-groopse)
     (.get app "/groopse/" load-all-groopse)

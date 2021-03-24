@@ -1,10 +1,11 @@
 (ns grootlapse.app
-  (:require [reagent.core :as r]
+  (:require [grootlapse.components :refer [spinner]]
+            [reagent.core :as r]
             [reagent.dom :as dom]
             ["react-router-dom" :as router]))
 
 (defonce stream-server (atom nil))
-(defonce state (r/atom {}))
+(defonce state (r/atom {:groopse "LOADING"}))
 (def server-name "axidraw")
 (def server (str "http://" server-name ":3000"))
 
@@ -130,18 +131,35 @@
      :class "absolute bg-green-800 text-white px-2 py-4 text-3xl rounded-full shadow-xl border border-black"
      :to "/new"}
     "Add"]
-   [:h2.p-4 "Aktiv"]
-   [:div.flex
-    [groopse-overview {:name (:name (:active @state))
-                       :image (some (fn [{:keys [name image]}]
-                                      (when (= name (:name (:active @state)))
-                                        image))
-                                    (:groopse @state))}]]
+   (when (:active @state)
+     [:<>
+      [:h2.px-4.pt-4.pb-2.text-xl "Aktiv"]
+      (let [active-name (:name (:active @state))]
+        [:div.flex.items-center
+         [groopse-overview {:name (:name (:active @state))
+                            :image (some (fn [{:keys [name image]}]
+                                           (when (= name active-name)
+                                             image))
+                                         (:groopse @state))}]
+         [button {:on-click (fn []
+                              (->(js/fetch (str "http://" server-name ":3000/groopse/active/stop")
+                                           (clj->js
+                                            {:method "POST"
+                                             :headers {"Content-type" "application/json"}}))
+                                 (.then (fn [] (swap! state assoc :active nil)))))
+                  :class "w-1/3"} "Stop"]])])
    [:hr.w-full]
-   [:div.flex.flex-wrap
-    (if (= (:groopse @state) "ERROR")
-      [:div "Wo ist Groot?"]
-      (map groopse-overview (:groopse @state)))]])
+   (case (:groopse @state)
+     "ERROR"
+     [:div.w-full.flex.justify-center.items-center.flex-col.py-4
+      [:div.text-xl.mb-3 "Wo ist Groot?"]
+      [:img {:src "/images/groot-sad.gif" :class "w-3/4 rounded"}]]
+     "LOADING"
+     [:div.w-full.flex.justify-center.items-center.flex-col.py-4
+      [:div.text-xl.mb-3 "Suche Groot..."]
+      [spinner]]
+     [:div.flex.flex-wrap
+      (map groopse-overview (:groopse @state))])])
 
 (defn app []
   (-> (js/fetch (str server "/groopse"))
