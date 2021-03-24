@@ -1,3 +1,4 @@
+192.168.178.20
 (ns grootlapse.server
   (:require ["express" :as express]
             ["http" :as http]
@@ -27,34 +28,49 @@
 
 (defonce server-ref (volatile! nil))
 (defonce state (atom {:active nil}))
+(defonce current-interval (atom nil))
 (def image-folder "images")
 (def video-folder "videos")
 (defn imagefile-name [number]
   (.padStart (str number ".jpg") 9 "0"))
 (defn videofile-name [number]
   (.padStart (str number ".mp4") 9 "0"))
+(defn snap [path]
+  (.snap (new camera #js {:mode "photo"
+                          :output path
+                          :width 640
+                          :height 480
+                          :nopreview true})))
+
 (defn create-groopse [req res]
   (let [image-number (atom 1)
         name (.-name (.-body req))
-        path (str js/__dirname "/" image-folder "/" name "/" )]
+        path (str js/__dirname "/" image-folder "/" name "/" )
+        video-path (str js/__dirname "/" video-folder "/" name "/" )]
     (fs/mkdirSync path #js {:recursive true})
-    (let [interval (js/setInterval
-                    (fn []
-                      (-> (.snap (new camera #js {:mode "photo"
-                                                  :output (str path (imagefile-name @image-number))
-                                                  :width 640
-                                                  :height 480
-                                                  :nopreview true}))
-                          (.then (fn []
-                                   (prn "snap" (str path (imagefile-name @image-number)))
-                                   (swap! image-number inc)))
-                          (.catch (fn [e]
-                                    (prn e)
-                                    (js/clearInterval (:active @state))
-                                    (swap! state assoc :active :ERROR)))))
-                    10000)]
-      (swap! state assoc :active interval)))
-  (.sendStatus ^js res 200))
+    (fs/mkdirSync video-path #js {:recursive true})
+    (-> (snap (str path (imagefile-name @image-number)))
+        (.then (fn []
+                 (swap! state assoc :active {:name name})
+                 (swap! image-number inc)
+                 (js/setTimeout
+                  (fn []
+                    (let [interval
+                          (js/setInterval
+                           (fn []
+                             (-> (snap (str path (imagefile-name @image-number)))
+                                 (.then (fn []
+                                          (prn "snap" (str path (imagefile-name @image-number)))
+                                          (swap! image-number inc)))
+                                 (.catch (fn [e]
+                                           (prn "SNAP ERROR: "e)
+                                           (js/clearInterval @current-interval)
+                                           (swap! state assoc :active :ERROR)))))
+                           (* 1000 60 10))]
+                      (reset! current-interval interval)))
+                  10000)
+                 (.sendStatus ^js res 200)))
+        (.catch (fn [] 500)))))
 
 (defn load-groopse [req res]
   (let [name (.-name ^js (.-params req))]
@@ -87,20 +103,23 @@
 
 (defn load-all-groopse [req res]
     (.json res
-         (clj->js (map (fn [folder-name]
-                         {:name folder-name
-                          :image (if (fs/accessSync (str image-folder "/" folder-name "/00001.jpg"))
-                                   (str "http://" server-name ":3000/" image-folder "/default.jpg")
-                                   (str "http://" server-name ":3000/" image-folder "/" folder-name "/00001.jpg"))
-                          :images (map
-                                   (fn [file-name]
-                                     (str "http://" server-name ":3000/" image-folder "/" folder-name "/" file-name))
-                                   (fs/readdirSync (str image-folder "/" folder-name)))
-                          :videos (map
-                                   (fn [file-name]
-                                     (str "http://" server-name ":3000/" video-folder "/" folder-name "/" file-name))
-                                   (fs/readdirSync (str video-folder "/" folder-name)))})
-                       (fs/readdirSync image-folder)))))
+         (clj->js
+          {:active (:active @state)
+           :groopse
+           (map (fn [folder-name]
+                  {:name folder-name
+                   :image (if (fs/accessSync (str image-folder "/" folder-name "/00001.jpg"))
+                            (str "http://" server-name ":3000/" image-folder "/default.jpg")
+                            (str "http://" server-name ":3000/" image-folder "/" folder-name "/00001.jpg"))
+                   :images (map
+                            (fn [file-name]
+                              (str "http://" server-name ":3000/" image-folder "/" folder-name "/" file-name))
+                            (fs/readdirSync (str image-folder "/" folder-name)))
+                   :videos (map
+                            (fn [file-name]
+                              (str "http://" server-name ":3000/" video-folder "/" folder-name "/" file-name))
+                            (fs/readdirSync (str video-folder "/" folder-name)))})
+                (fs/readdirSync image-folder))})))
 
 
 (def width 960)

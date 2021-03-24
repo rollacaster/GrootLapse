@@ -72,13 +72,16 @@
 (def groopse-new
   (with-meta
     (fn []
-      (let [preview (r/atom false)]
-        (fn []
+      (let [preview (r/atom false)
+            name (r/atom "")
+            error (r/atom "")]
+        (fn [props]
           [:form.p-4
            [:div.pb-8
-            [:label.block.mb-2.pl-2 {:for "name"}"Name"]
+            [:label.block.mb-2.pl-2 {:for "groopse-name"}
+             "Name"]
             [:input.border.rounded.w-full.p-2.font-bold
-             {:id "name" :value "Flower" :on-change (fn [])}]]
+             {:id "groopse-name" :value @name :on-change (fn [e] (reset! name ^js (.-target.value e)))}]]
            [:div.relative.pb-16
             [:div.mb-2.pl-2 "Preview"]
             [button {:class "absolute"
@@ -97,105 +100,74 @@
                                   1000))}
              "Preview"]
             [:canvas.w-full.border.rounded
-             {:ref (fn [ref]
-                     (reset! canvas-ref ref)
-                     )}]]
-           [button
-            {:on-click (fn []
-                         (.stopStream ^js @stream-server)
-                         (reset! preview false)
-                         (reset! stream-server nil))}
-            "Cancel"]
+             {:ref (fn [ref] (reset! canvas-ref ref))}]]
            ;; interval?
            ;; duration?
            ;; space calculation?
            [:div.w-full.flex.justify-end
             [button
              {:on-click (fn []
-                          (->(js/fetch (str "http://" server-name ":3000/groopse")
-                                       (clj->js
-                                        {:method "POST"
-                                         :headers {"Content-type" "application/json"}
-                                         :body (js/JSON.stringify (clj->js {:name "flower"}))}))
-                             (.catch prn)))}
-             "Erstellen"]]])))
+                          (if (> (count @name) 0)
+                            (->(js/fetch (str "http://" server-name ":3000/groopse")
+                                         (clj->js
+                                          {:method "POST"
+                                           :headers {"Content-type" "application/json"}
+                                           :body (js/JSON.stringify (clj->js {:name @name}))}))
+                               (.then (fn [] ((:push (:history props)) "/")))
+                               (.catch (fn [] (reset! error "Etwas ist schiefgelaufen!"))))
+                            (reset! error "Bitte Namen Eintragen")))}
+             "Erstellen"]]
+           (when @error [:div.red @error])])))
     {:component-will-unmount (fn []
-                               (.stopStream ^js @stream-server)
-                               (reset! stream-server nil))}))
+                               (when @stream-server
+                                 (.stopStream ^js @stream-server)
+                                 (reset! stream-server nil)))}))
+
+(defn overview []
+  [:div.flex.flex-wrap
+   [:> (.-Link router)
+    {:style {:right "1rem" :bottom "1rem"}
+     :class "absolute bg-green-800 text-white px-2 py-4 text-3xl rounded-full shadow-xl border border-black"
+     :to "/new"}
+    "Add"]
+   [:h2.p-4 "Aktiv"]
+   [:div.flex
+    [groopse-overview {:name (:name (:active @state))
+                       :image (some (fn [{:keys [name image]}]
+                                      (when (= name (:name (:active @state)))
+                                        image))
+                                    (:groopse @state))}]]
+   [:hr.w-full]
+   [:div.flex.flex-wrap
+    (if (= (:groopse @state) "ERROR")
+      [:div "Wo ist Groot?"]
+      (map groopse-overview (:groopse @state)))]])
 
 (defn app []
   (-> (js/fetch (str server "/groopse"))
       (.then (fn [res] (.json res)))
-      (.then (fn [json] (swap! state assoc :groopse (js->clj json :keywordize-keys true))))
-      (.catch prn))
-  (let [new-name (r/atom "")]
-    (fn []
-      [:> (.-BrowserRouter router)
-       [:div.flex.flex-col.h-full
-        [:header.bg-green-700.text-white
-         [:div.max-w-4xl.mx-auto.w-full.text-center.py-2.text-lg "GrootLapse"]]
-        [:main.flex-1.relative
-         [:> (.-Route router)
-          {:path "/" :exact true}
-          [:div.flex.flex-wrap
-           [:> (.-Link router)
-            {:style {:right "1rem" :bottom "1rem"}
-             :class "absolute bg-green-800 text-white px-2 py-4 text-3xl rounded-full shadow-xl border border-black"
-             :to "/new"}
-            "Add"]
-           (map groopse-overview (:groopse @state))]]
-         [:> (.-Switch router)
-          [:> (.-Route router)
-           {:path "/new"
-            :render (fn [props] (r/as-element [groopse-new (js->clj props :keywordize-keys true)]))}]
-          [:> (.-Route router)
-           {:path "/:name"
-            :render (fn [props] (r/as-element [groopse-details (js->clj props :keywordize-keys true)]))}]]
-         (comment
-           [:button {:on-click
-                     (fn []
-                       (.playStream ^js @stream-server)
-                       (swap! state assoc :new-groopse true))}
-            "Start stream"]
-           [:button {:on-click
-                     (fn []
-                       (.stopStream ^js @stream-server)
-                       (swap! state assoc :new-groopse false))}
-            "Stop stream"]
-           [:input {:value @new-name
-                    :on-change (fn [e] (reset! new-name ^js (.-target.value e)))}]
-           [:button {:on-click
-                     (fn []
-                       (->(js/fetch (str "http://" server-name ":3000/groopse")
-                                    (clj->js
-                                     {:method "POST"
-                                      :headers {"Content-type" "application/json"}
-                                      :body (js/JSON.stringify (clj->js {:name "flower"}))}))
-                          (.catch prn)))}
-            "Create groopse"]
-           [:button {:on-click
-                     (fn []
-                       (-> (js/fetch (str "http://" server-name ":3000/groopse/" @new-name)
-                                     (clj->js
-                                      {:headers {"Content-type" "application/json"}}))
-                           (.then (fn [res] (.json res)))
-                           (.then (fn [images]
-                                    (swap! state update :groopse assoc @new-name images)))))}
-            "Load groopse"]
-           [:canvas#canvas
-            {:style {:display (if (:new-groopse @state) "block" "none")}
-             :ref (fn [ref]
-                    (when (and ref (= nil @stream-server))
-                      (let [uri (str "ws://axidraw:8080")
-                            wsavc (js/window.WSAvcPlayer. ref "webgl" 1 35)]
-                        (.connect wsavc uri)
-                        (reset! stream-server wsavc))))}]
-           [:div "New GrootLapse"])
-         (map (fn [img]
-                [:img {:key img :src img}])
-              (get (:groopse @state ) @new-name))]
-        [:footer.bg-green-700.text-white
-         [:div.max-w-4xl.mx-auto.w-full.text-center.py-1 "Birthday edition"]]]])))
+      (.then (fn [json] (swap! state merge (js->clj json :keywordize-keys true))))
+      (.catch (fn [e]
+                (prn e)
+                (swap! state assoc :groopse "ERROR"))))
+  (fn []
+    [:> (.-BrowserRouter router)
+     [:div.flex.flex-col.h-full
+      [:header.bg-green-700.text-white
+       [:div.max-w-4xl.mx-auto.w-full.text-center.py-2.text-lg "GrootLapse"]]
+      [:main.flex-1.relative
+       [:> (.-Route router)
+        {:path "/" :exact true}
+        [overview]]
+       [:> (.-Switch router)
+        [:> (.-Route router)
+         {:path "/new"
+          :render (fn [props] (r/as-element [groopse-new (js->clj props :keywordize-keys true)]))}]
+        [:> (.-Route router)
+         {:path "/:name"
+          :render (fn [props] (r/as-element [groopse-details (js->clj props :keywordize-keys true)]))}]]]
+      [:footer.bg-green-700.text-white
+       [:div.max-w-4xl.mx-auto.w-full.text-center.py-1 "Birthday edition"]]]]))
 
 
 (dom/render [app] (js/document.getElementById "app"))
@@ -206,7 +178,7 @@
                (clj->js
                 {:method "POST"
                  :headers {"Content-type" "application/json"}
-                 :body (js/JSON.stringify (clj->js {:name "flower3"}))}))
+                 :body (js/JSON.stringify (clj->js {:name "flower5"}))}))
      (.catch prn))
   (->(js/fetch (str "http://" server-name ":3000/groopse/flower3/stitch")
                (clj->js
