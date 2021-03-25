@@ -9,6 +9,16 @@
 (def server-name "axidraw")
 (def server (str "http://" server-name ":3000"))
 
+(defn icon [path size color]
+  (let [sizes {:small 12 :medium 24 :large 48}]
+    [:svg {:width (size sizes) :height (size sizes) :viewBox "0 0 24 24"}
+     [:path {:d path :fill color}]]))
+
+(defn plus-icon
+  ([] (icon "M24 10h-10v-10h-4v10h-10v4h10v10h4v-10h10z" :medium "black"))
+  ([size] (icon "M24 10h-10v-10h-4v10h-10v4h10v10h4v-10h10z" size "black"))
+  ([size color] (icon "M24 10h-10v-10h-4v10h-10v4h10v10h4v-10h10z" size color)))
+
 (defn button
   ([children]
    [button {} children])
@@ -204,9 +214,9 @@
   [:div.flex.flex-wrap
    [:> (.-Link router)
     {:style {:right "1rem" :bottom "1rem"}
-     :class "absolute bg-green-800 text-white px-2 py-4 text-3xl rounded-full shadow-xl border border-black"
+     :class "absolute bg-green-800 text-white p-4 text-3xl rounded-full shadow-xl border border-black"
      :to "/new"}
-    "Add"]
+    [plus-icon :medium "white"]]
    (when (:active @state)
      [:<>
       [:h2.px-4.pt-4.pb-2.text-xl "Aktiv"]
