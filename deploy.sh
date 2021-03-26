@@ -1,2 +1,4 @@
+sshfs pi@axidraw:/home/pi/grootlapse /Users/thomas/projects/grootlapse/out;
 shadow-cljs release raspi;
-scp -r ./out/grootlapse pi@axidraw:/home/pi/;
+shadow-cljs release app;
+

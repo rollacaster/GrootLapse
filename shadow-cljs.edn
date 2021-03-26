@@ -11,6 +11,11 @@
  {:app
   {:target :browser
    :asset-path "js"
+   :output-dir "out/public/js"
+   :build-hooks
+   [(shadow.html/copy-file
+     "public/index.html"
+     "out/public/index.html")]
    :modules {:main {:init-fn grootlapse.app/init}}}
   :raspi
   {:target :node-script

@@ -28,6 +28,7 @@
 (defonce server-ref (volatile! nil))
 (defonce state (atom {:active nil}))
 (defonce current-interval (atom nil))
+(def public-folder "public")
 (def image-folder "images")
 (def video-folder "videos")
 (defn imagefile-name [number]
@@ -53,8 +54,8 @@
 (defn create-groopse [req res]
   (let [image-number (atom 1)
         name (.-name (.-body req))
-        path (str js/__dirname "/" image-folder "/" name "/" )
-        video-path (str js/__dirname "/" video-folder "/" name "/" )]
+        path (str js/__dirname "/" public-folder "/" image-folder "/" name "/" )
+        video-path (str js/__dirname "/" public-folder "/" video-folder "/" name "/" )]
     (fs/mkdirSync path #js {:recursive true})
     (fs/mkdirSync video-path #js {:recursive true})
     (-> (snap (str path (imagefile-name @image-number)))
@@ -86,8 +87,8 @@
 
 (defn delete-groopse [req res]
   (let [name (.-name ^js (.-params req))
-        path (str js/__dirname "/" image-folder "/" name "/" )
-        video-path (str js/__dirname "/" video-folder "/" name "/" )]
+        path (str js/__dirname "/" public-folder "/" image-folder "/" name "/" )
+        video-path (str js/__dirname "/" public-folder "/" video-folder "/" name "/" )]
     (when (= name (:name (:active @state)))
       (stop-active-groopse))
     (fs/rmdirSync path #js {:recursive true})
@@ -97,43 +98,46 @@
 (defn delete-video [req res]
   (let [name (.-name ^js (.-params req))
         video (.-video ^js (.-params req))
-        video-path (str js/__dirname "/" video-folder "/" name "/" video)]
+        video-path (str js/__dirname "/" public-folder "/" video-folder "/" name "/" video)]
     (fs/unlinkSync video-path)
     (.sendStatus ^js res 200)))
 
 (defn delete-image [req res]
   (let [name (.-name ^js (.-params req))
         image (.-image ^js (.-params req))
-        image-path (str js/__dirname "/" image-folder "/" name "/" image)]
+        image-path (str js/__dirname "/" public-folder "/" image-folder "/" name "/" image)]
     (fs/unlinkSync image-path)
     (.sendStatus ^js res 200)))
 
 (defn load-groopse [req res]
   (let [name (.-name ^js (.-params req))]
     (.json res (clj->js
-                (->> (fs/readdirSync (str image-folder "/" name))
+                (->> (fs/readdirSync (str public-folder "/" image-folder "/" name))
                      (map (fn [file-name] (str "http://" server-name ":3000/" image-folder "/" name "/" file-name))))))))
 
 (def stitch-interval (atom nil))
 (defn stitch-groopse [req res]
   (let [name (.-name ^js (.-params req))
         path (str video-folder "/" name)]
-    (fs/mkdirSync path #js {:recursive true})
-    (let [video-nr (->> (fs/readdirSync (str video-folder "/" name))
+    (fs/mkdirSync (str public-folder "/" path) #js {:recursive true})
+    (let [video-nr (->> (fs/readdirSync (str public-folder "/" video-folder "/" name))
                         (map (fn [filename] (js/parseInt (str/replace filename ".mp4" ""))))
                         (filter (fn [video-nr] (not (js/isNaN video-nr))))
                         sort
                         last
                         inc)]
       (process/spawnSync
-       "ffmpeg" (into-array ["-r" "10" "-i" (str image-folder "/" name "/%5d.jpg") "-r" "10" "-vcodec" "libx264" "-crf" "20" "-g" "15"
-                             (str path "/" (videofile-name video-nr))]))
-      (if (fs/accessSync (str path "/" (videofile-name video-nr)))
+       "ffmpeg" (into-array ["-r" "10" "-i" (str public-folder "/" image-folder "/" name "/%5d.jpg") "-r" "10" "-vcodec" "libx264" "-crf" "20" "-g" "15"
+                             (str public-folder "/" path "/" (videofile-name video-nr))]))
+      (if (fs/accessSync (str public-folder "/" path "/" (videofile-name video-nr)))
         (reset! stitch-interval
-                (js/setInterval (fn [] (when-not (fs/accessSync (str path "/" (videofile-name video-nr)))
+                (js/setInterval (fn [] (try
+                                        (fs/accessSync (str public-folder "/" path "/" (videofile-name video-nr)))
                                         (js/clearInterval @stitch-interval)
                                         (reset! stitch-interval nil)
-                                        (.json res (str path "/" (videofile-name video-nr)))))
+                                        (.json res (str path "/" (videofile-name video-nr)))
+                                        (catch js/Error e
+                                          (prn e))))
                                 1000))
         (.json res (str "http://" server-name ":3000/" path "/" (videofile-name video-nr)))))))
 
@@ -145,19 +149,19 @@
            (map (fn [folder-name]
                   {:name folder-name
                    :image (try
-                            (fs/accessSync (str image-folder "/" folder-name "/00001.jpg"))
+                            (fs/accessSync (str public-folder "/" image-folder "/" folder-name "/00001.jpg"))
                             (str "http://" server-name ":3000/" image-folder "/" folder-name "/00001.jpg")
                             (catch js/Error _
                                 (str "http://" server-name ":3000/default.png")))
                    :images (map
                             (fn [file-name]
                               (str "http://" server-name ":3000/" image-folder "/" folder-name "/" file-name))
-                            (fs/readdirSync (str image-folder "/" folder-name)))
+                            (fs/readdirSync (str public-folder "/" image-folder "/" folder-name)))
                    :videos (map
                             (fn [file-name]
                               (str "http://" server-name ":3000/" video-folder "/" folder-name "/" file-name))
-                            (fs/readdirSync (str video-folder "/" folder-name)))})
-                (fs/readdirSync image-folder))})))
+                            (fs/readdirSync (str public-folder "/" video-folder "/" folder-name)))})
+                (fs/readdirSync (str public-folder "/" image-folder)))})))
 
 
 (def width 960)
@@ -215,7 +219,7 @@
   (let [app (express)]
     (.use app (cors))
     (.use app (.json express))
-    (.use app (.static express "."))
+    (.use app (.static express "./public"))
     (.post app "/groopse" create-groopse)
     (.post app "/groopse/active/stop" stop-active-groopse-handler)
     (.get app "/groopse/:name" load-groopse)

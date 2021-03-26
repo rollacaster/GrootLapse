@@ -263,7 +263,7 @@
      "ERROR"
      [:div.w-full.flex.justify-center.items-center.flex-col.py-4
       [:div.text-xl.mb-3 "Wo ist Groot?"]
-      [:img {:src "/images/groot-sad.gif" :class "w-3/4 rounded"}]]
+      [:img {:src "/imgs/groot-sad.gif" :class "w-3/4 rounded"}]]
      "LOADING"
      [:div.w-full.flex.justify-center.items-center.flex-col.py-4
       [:div.text-xl.mb-3 "Suche Groot..."]
