@@ -94,6 +94,20 @@
     (fs/rmdirSync video-path #js {:recursive true})
     (.sendStatus ^js res 200)))
 
+(defn delete-video [req res]
+  (let [name (.-name ^js (.-params req))
+        video (.-video ^js (.-params req))
+        video-path (str js/__dirname "/" video-folder "/" name "/" video)]
+    (fs/unlinkSync video-path)
+    (.sendStatus ^js res 200)))
+
+(defn delete-image [req res]
+  (let [name (.-name ^js (.-params req))
+        image (.-image ^js (.-params req))
+        image-path (str js/__dirname "/" image-folder "/" name "/" image)]
+    (fs/unlinkSync image-path)
+    (.sendStatus ^js res 200)))
+
 (defn load-groopse [req res]
   (let [name (.-name ^js (.-params req))]
     (.json res (clj->js
@@ -130,9 +144,11 @@
            :groopse
            (map (fn [folder-name]
                   {:name folder-name
-                   :image (if (fs/accessSync (str image-folder "/" folder-name "/00001.jpg"))
-                            (str "http://" server-name ":3000/" image-folder "/default.jpg")
-                            (str "http://" server-name ":3000/" image-folder "/" folder-name "/00001.jpg"))
+                   :image (try
+                            (fs/accessSync (str image-folder "/" folder-name "/00001.jpg"))
+                            (str "http://" server-name ":3000/" image-folder "/" folder-name "/00001.jpg")
+                            (catch js/Error _
+                                (str "http://" server-name ":3000/default.png")))
                    :images (map
                             (fn [file-name]
                               (str "http://" server-name ":3000/" image-folder "/" folder-name "/" file-name))
@@ -204,6 +220,8 @@
     (.post app "/groopse/active/stop" stop-active-groopse-handler)
     (.get app "/groopse/:name" load-groopse)
     (.delete app "/groopse/:name" delete-groopse)
+    (.delete app "/groopse/:name/video/:video" delete-video)
+    (.delete app "/groopse/:name/image/:image" delete-image)
     (.get app "/groopse/:name/stitch" stitch-groopse)
     (.get app "/groopse/" load-all-groopse)
     (let [server (.createServer http app)

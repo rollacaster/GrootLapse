@@ -2,7 +2,8 @@
   (:require [grootlapse.components :refer [spinner]]
             [reagent.core :as r]
             [reagent.dom :as dom]
-            ["react-router-dom" :as router]))
+            ["react-router-dom" :as router]
+            [clojure.string :as s]))
 
 (defonce stream-server (atom nil))
 (defonce state (r/atom {:groopse "LOADING"}))
@@ -18,6 +19,11 @@
   ([] (icon "M24 10h-10v-10h-4v10h-10v4h10v10h4v-10h10z" :medium "black"))
   ([size] (icon "M24 10h-10v-10h-4v10h-10v4h10v10h4v-10h10z" size "black"))
   ([size color] (icon "M24 10h-10v-10h-4v10h-10v4h10v10h4v-10h10z" size color)))
+
+(defn trash-icon
+  ([] (icon "M3 6v18h18v-18h-18zm5 14c0 .552-.448 1-1 1s-1-.448-1-1v-10c0-.552.448-1 1-1s1 .448 1 1v10zm5 0c0 .552-.448 1-1 1s-1-.448-1-1v-10c0-.552.448-1 1-1s1 .448 1 1v10zm5 0c0 .552-.448 1-1 1s-1-.448-1-1v-10c0-.552.448-1 1-1s1 .448 1 1v10zm4-18v2h-20v-2h5.711c.9 0 1.631-1.099 1.631-2h5.315c0 .901.73 2 1.631 2h5.712z" :medium "black"))
+  ([size] (icon "M3 6v18h18v-18h-18zm5 14c0 .552-.448 1-1 1s-1-.448-1-1v-10c0-.552.448-1 1-1s1 .448 1 1v10zm5 0c0 .552-.448 1-1 1s-1-.448-1-1v-10c0-.552.448-1 1-1s1 .448 1 1v10zm5 0c0 .552-.448 1-1 1s-1-.448-1-1v-10c0-.552.448-1 1-1s1 .448 1 1v10zm4-18v2h-20v-2h5.711c.9 0 1.631-1.099 1.631-2h5.315c0 .901.73 2 1.631 2h5.712z" size "black"))
+  ([size color] (icon "M3 6v18h18v-18h-18zm5 14c0 .552-.448 1-1 1s-1-.448-1-1v-10c0-.552.448-1 1-1s1 .448 1 1v10zm5 0c0 .552-.448 1-1 1s-1-.448-1-1v-10c0-.552.448-1 1-1s1 .448 1 1v10zm5 0c0 .552-.448 1-1 1s-1-.448-1-1v-10c0-.552.448-1 1-1s1 .448 1 1v10zm4-18v2h-20v-2h5.711c.9 0 1.631-1.099 1.631-2h5.315c0 .901.73 2 1.631 2h5.712z" size color)))
 
 (defn button
   ([children]
@@ -77,10 +83,16 @@
                (map
                 (fn [video]
                   (when-not (@video-errors video)
-                    [:video.mb-2.border.w-100
-                     {:key video :src video :controls true
-                      :onError (fn [] (prn "error"
-                                          (swap! video-errors conj video)))}]))
+                    [:div.relative {:key video}
+                     [:video.mb-2.border.w-100
+                      {:src video :controls true
+                       :onError (fn [] (prn "error"
+                                           (swap! video-errors conj video)))}]
+                     [button {:class "absolute" :style {:top "1rem" :right "1rem"}
+                              :on-click (fn [] (reset! delete-mode {:type :video
+                                                                   :label (str "Video " (s/join "/" (take-last 2 (s/split video #"/"))))
+                                                                   :name (apply str (take-last 1 (s/split video #"/")))}))}
+                      [trash-icon :medium "white"]]]))
                 (take-last (if @show-all-videos (count videos) max-videos) videos)))]
              [:div.w-full.flex.justify-center.pb-5
               (when (and (not @show-all-videos) (> (count videos) max-videos))
@@ -108,7 +120,13 @@
           [:div.flex.flex-wrap.justify-between
            (map
             (fn [image]
-              [:img.mb-2.border {:key image :src image :style {:width "49%"}}])
+              [:div.relative {:key image :style {:width "49%"}}
+               [:img.mb-2.border {:src image}]
+               [button {:class "absolute" :style {:top "0.5rem" :right "0.5rem"}
+                        :on-click (fn [] (reset! delete-mode {:type :image
+                                                             :label (str "Bild " (s/join "/" (take-last 2 (s/split image #"/"))))
+                                                             :name (apply str (take-last 1 (s/split image #"/")))}))}
+                [trash-icon :small "white"]]])
             (take (if @show-all-images (count images) max-images) images))]
           [:div.w-full.flex.justify-center.pb-5
            (when (and (not @show-all-images) (> (count images) max-images))
@@ -119,14 +137,17 @@
             {:style {:top "50%" :left "50%" :transform "translate(-50%,-50%)"}}
             [:div.bg-green-100.rounded.p-4
              [:div.pb-8
-              (str "Den " @delete-mode " sicher löschen?")]
+              (str (:label @delete-mode) " sicher löschen?")]
              [:div.flex.w-full
               [button {:class "w-1/2 mr-1"
                        :pending @deleting
                        :on-click (fn []
                                    (reset! deleting true)
                                    (->
-                                    (js/fetch (str "http://" server-name ":3000/groopse/" name)
+                                    (js/fetch (case (:type @delete-mode)
+                                                :groopse (str "http://" server-name ":3000/groopse/" name)
+                                                :video (str "http://" server-name ":3000/groopse/" name "/video/" (:name @delete-mode))
+                                                :image (str "http://" server-name ":3000/groopse/" name "/image/" (:name @delete-mode)))
                                                 (clj->js
                                                  {:headers {"Content-type" "application/json"}
                                                   :method "DELETE"}))
@@ -134,14 +155,17 @@
                                                (reset! deleting false)
                                                (if (.-ok res)
                                                  (do
-                                                   ((:push (:history props)) "/")
-                                                   (load-groopse))
+                                                   (when (= (:type @delete-mode) :groopse)
+                                                     ((:push (:history props)) "/"))
+                                                   (load-groopse)
+                                                   (reset! delete-mode nil))
                                                  (prn  "Etwas ist schiefgelaufen!"))))))}
                "OK"]
               [button {:class "w-1/2 ml-1"
                        :on-click (fn [] (reset! delete-mode nil))}
                "Abbrechen"]]]])
-         [button {:on-click (fn [] (reset! delete-mode (str "Groopse " name)))}
+         [button {:on-click (fn [] (reset! delete-mode {:type :groopse
+                                                       :label (str "Groopse " name)}))}
           "Löschen"]]))))
 
 
@@ -214,7 +238,7 @@
   [:div.flex.flex-wrap
    [:> (.-Link router)
     {:style {:right "1rem" :bottom "1rem"}
-     :class "absolute bg-green-800 text-white p-4 text-3xl rounded-full shadow-xl border border-black"
+     :class "absolute bg-green-800 p-4 rounded-full shadow-xl"
      :to "/new"}
     [plus-icon :medium "white"]]
    (when (:active @state)
