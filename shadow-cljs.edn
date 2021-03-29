@@ -5,7 +5,7 @@
  :dependencies
  [[reagent "0.10.0"]]
 
- :dev-http {8080 "public"}
+ :dev-http {8080 "out/public"}
 
  :builds
  {:app
