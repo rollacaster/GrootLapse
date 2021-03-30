@@ -228,6 +228,7 @@
     (.delete app "/groopse/:name/image/:image" delete-image)
     (.get app "/groopse/:name/stitch" stitch-groopse)
     (.get app "/groopse/" load-all-groopse)
+    (.all app "/*" (fn [_ res] ^js (.sendFile res (str js/__dirname "/public/index.html"))))
     (let [server (.createServer http app)
           {:keys [wss]} (swap! stream-server assoc :wss (new (.-Server ws) #js {:server server}))]
       ^js (.on wss "connection" new-client)
