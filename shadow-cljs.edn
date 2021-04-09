@@ -3,7 +3,9 @@
  ["src"]
 
  :dependencies
- [[reagent "0.10.0"]]
+ [[reagent "0.10.0"]
+  [fork "2.4.0"]
+  [vlad "3.3.2"]]
 
  :dev-http {8080 "out/public"}
 

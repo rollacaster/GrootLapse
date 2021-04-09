@@ -3,7 +3,9 @@
             [reagent.core :as r]
             [reagent.dom :as dom]
             ["react-router-dom" :as router]
-            [clojure.string :as s]))
+            [clojure.string :as s]
+            [fork.reagent :as fork]
+            [vlad.core :as vlad]))
 
 (defonce stream-server (atom nil))
 (defonce state (r/atom {:groopse "LOADING"}))
@@ -33,9 +35,9 @@
 (defn button
   ([children]
    [button {} children])
-  ([{:keys [on-click pending class style]} children]
+  ([{:keys [on-click pending class style type]} children]
    [:button.bg-green-700.text-white.p-2.rounded-xl.shadow.font-bold
-    {:on-click (when-not pending on-click) :type "button"
+    {:on-click (when-not pending on-click) :type (or type "button")
      :class class :style style}
     (if pending "Lade" children)]))
 
@@ -50,9 +52,7 @@
   (-> (js/fetch (str server "/groopse"))
       (.then (fn [res] (.json res)))
       (.then (fn [json] (swap! state merge (js->clj json :keywordize-keys true))))
-      (.catch (fn [e]
-                (prn e)
-                (swap! state assoc :groopse "ERROR")))))
+      (.catch (fn [] (swap! state assoc :groopse "ERROR")))))
 
 (defn groopse-details []
   (let [video-errors (r/atom #{})
@@ -173,68 +173,104 @@
                                                        :label (str "Groopse " name)}))}
           "Löschen"]]))))
 
+(defn input [{:keys [value on-change on-blur id name type class on-click ref]}]
+  [:input.border.rounded.w-full.p-2.font-bold
+   {:id id :type type :name name :class class
+    :value value :on-change (fn [e]
+                              (prn ^js (.-target.value e))
+                              (on-change e))
+    :on-blur on-blur
+    :on-click on-click :ref ref}])
 
 (def groopse-new
   (with-meta
-    (fn []
-      (let [preview (r/atom false)
-            name (r/atom "")
-            error (r/atom "")
-            creating (r/atom nil)]
-        (fn [props]
-          [:form.p-4
-           [:div.pb-8
-            [:label.block.mb-2.pl-2 {:for "groopse-name"}
-             "Name"]
-            [:input.border.rounded.w-full.p-2.font-bold
-             {:id "groopse-name" :value @name :on-change (fn [e] (reset! name ^js (.-target.value e)))}]]
-           [:div.relative.pb-16
-            [:div.mb-2.pl-2 "Preview"]
-            [button {:class "absolute"
-                     :style {:top "50%" :left "50%" :transform "translate(-50%,-50%)"
-                             :display (when @preview "none")}
-                     :on-click (fn []
-                                 (when (and @canvas-ref (= nil @stream-server))
-                                   (let [uri (str "ws://" server-name ":3000")
-                                         wsavc (js/window.WSAvcPlayer. @canvas-ref "webgl" 1 35)]
-                                     (.connect wsavc uri)
-                                     (reset! stream-server wsavc)))
-                                 (js/setTimeout
-                                  (fn []
-                                    (.playStream ^js @stream-server)
-                                    (reset! preview true))
-                                  1000))}
-             "Preview"]
-            [:canvas.w-full.border.rounded.bg-white
-             {:ref (fn [ref] (reset! canvas-ref ref))}]]
-           ;; interval?
-           ;; duration?
-           ;; space calculation?
-           [:div.w-full.flex.justify-end
-            [button
-             {:pending @creating
-              :on-click (fn []
-                          (if (> (count @name) 0)
-                            (do
-                              (when @stream-server
-                                (.stopStream ^js @stream-server)
-                                (reset! stream-server nil))
-                              (reset! creating true)
-                              (->(js/fetch (str "http://" server-name ":3000/groopse")
-                                           (clj->js
-                                            {:method "POST"
-                                             :headers {"Content-type" "application/json"}
-                                             :body (js/JSON.stringify (clj->js {:name @name}))}))
-                                 (.then (fn [res]
-                                          (reset! creating false)
-                                          (if (.-ok res)
-                                            (do
-                                              (load-groopse)
-                                              ((:push (:history props)) "/"))
-                                            (reset! error "Etwas ist schiefgelaufen!"))))))
-                            (reset! error "Bitte Namen Eintragen")))}
-             "Erstellen"]]
-           (when @error [:div.red @error])])))
+    (fn [props]
+      [fork/form {:initial-values {"name" ""
+                                   "interval" 10
+                                   "start" ""}
+                  :prevent-default? true
+                  :validation #(vlad/field-errors (vlad/join (vlad/attr ["name"] (vlad/present {:message "Bitte Name eingeben."}))) %)
+                  :on-submit (fn [{:keys [state path values]}]
+                               (when @stream-server
+                                 (.stopStream ^js @stream-server)
+                                 (reset! stream-server nil))
+                               (prn values)
+                               (swap! state #(fork/set-submitting % path true))
+                               (->(js/fetch (str "http://" server-name ":3000/groopse")
+                                            (clj->js
+                                             {:method "POST"
+                                              :headers {"Content-type" "application/json"}
+                                              :body (js/JSON.stringify (clj->js {:name (get values "name")}))}))
+                                  (.then (fn [res]
+                                           (swap! state #(fork/set-submitting % path false))
+                                           (if (.-ok res)
+                                             (do
+                                               (load-groopse)
+                                               ((:push (:history props)) "/"))
+                                             (fork/set-server-message state path "Etwas ist schiefgelaufen!"))))
+                                  (.catch (fn []
+                                            (swap! state (fn [state]
+                                                           (-> state
+                                                               (fork/set-server-message path "Kein Verbindung zu Groot")
+                                                               (fork/set-submitting path false))))))))}
+       (let [preview (r/atom false)]
+         (fn [{:keys [form-id values handle-submit handle-change handle-blur submitting? errors
+                     on-submit-server-message touched]}]
+           [:form.px-4.py-6
+            {:id form-id
+             :on-submit handle-submit}
+            [:h1.text-lg.pl-2.pb-6.font-bold "Neuen Groopse erstellen"]
+            [:div.pb-6
+             [:label.block.mb-2.pl-2 {:for "groopse-name"}
+              "Name"]
+             [input
+              {:id "groopse-name" :value (values "name") :on-change handle-change :on-blur handle-blur
+               :name "name"}]
+             (when (touched "name")
+               [:div.text-red-400 (first (get errors (list "name")))])]
+            [:div.pb-6.flex
+             [:div.pr-3 {:class "w-1/2"}
+              [:label.block.mb-2.pl-2 {:for "groopse-interval"}
+               "Foto Frequenz"]
+              [:div.relative
+               [input
+                {:id "groopse-interval" :type "number" :name "interval" :class "text-right pr-12"
+                 :value (values "interval") :on-change handle-change :on-blur handle-blur}]
+               [:span.absolute.font-light.text-sm {:style {:top "50%" :right "1rem" :transform "translateY(-50%)"}} "mins"]]]
+             [:div.pl-3 {:class "w-1/2"}
+              [:label.block.mb-2.pl-2 {:for "groopse-start"}
+               "Start"]
+              [:div
+               [input {:class "text-right" :type "time" :value (values "start") :on-change handle-change :name "start"}]]]]
+            [:div.relative.pb-16
+             [:div.mb-2.pl-2 "Preview"]
+             [button {:class "absolute"
+                      :style {:top "50%" :left "50%" :transform "translate(-50%,-50%)"
+                              :display (when @preview "none")}
+                      :on-click (fn []
+                                  (when (and @canvas-ref (= nil @stream-server))
+                                    (let [uri (str "ws://" server-name ":3000")
+                                          wsavc (js/window.WSAvcPlayer. @canvas-ref "webgl" 1 35)]
+                                      (.connect wsavc uri)
+                                      (reset! stream-server wsavc)))
+                                  (js/setTimeout
+                                   (fn []
+                                     (.playStream ^js @stream-server)
+                                     (reset! preview true))
+                                   1000))}
+              "Preview"]
+             [:canvas.w-full.border.rounded.bg-white
+              {:ref (fn [ref] (reset! canvas-ref ref))}]]
+            ;; interval?
+            ;; duration?
+            ;; space calculation?
+            [:div.w-full.flex.items-center
+             {:class (if on-submit-server-message "justify-between" "justify-end")}
+             (when on-submit-server-message
+              [:div.text-red-400 on-submit-server-message])
+             [button
+              {:pending submitting? :type "submit"}
+              "Erstellen"]]]))])
     {:component-will-unmount (fn []
                                (when @stream-server
                                  (.stopStream ^js @stream-server)
@@ -318,4 +354,3 @@
      (.then (fn [res] (.json res)))
      (.then prn)
      (.catch prn)))
-
