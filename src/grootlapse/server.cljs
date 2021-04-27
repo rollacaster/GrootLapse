@@ -8,7 +8,8 @@
             ["cors" :as cors]
             [clojure.string :as str]
             ["ws" :as ws]
-            ["stream-split" :as stream-split]))
+            ["stream-split" :as stream-split]
+            ["date-fns" :as date]))
 
 (def server-name "axidraw")
 
@@ -27,7 +28,7 @@
 
 (defonce server-ref (volatile! nil))
 (defonce state (atom {:active nil}))
-(defonce current-interval (atom nil))
+
 (def public-folder "public")
 (def image-folder "images")
 (def video-folder "videos")
@@ -35,55 +36,89 @@
   (.padStart (str number ".jpg") 9 "0"))
 (defn videofile-name [number]
   (.padStart (str number ".mp4") 9 "0"))
-(defn snap [path]
-  (.snap (new camera #js {:mode "photo"
-                          :output path
-                          :width 640
-                          :height 480
-                          :nopreview true})))
 
+(defn snap [path]
+  (if (= server-name "localhost")
+    (new js/Promise (fn [resolve reject]
+                      (try
+                        (fs/copyFileSync (str public-folder "/imgs/groot-sad.gif") path)
+                        (catch js/Error e
+                          (reject "Failed to snap" e)))
+                      (js/setTimeout (fn [] (resolve)) 500)))
+    (-> (.snap (new camera #js {:mode "photo"
+                                :output path
+                                :width 640
+                                :height 480
+                                :nopreview true}))
+        (.then (fn [] (prn "snap" path))))))
 
 (defn stop-active-groopse []
-  (swap! state assoc :active nil)
-  (js/clearInterval @current-interval))
+  (js/clearInterval (:interval (:active @state)))
+  (js/clearTimeout (:timeout (:active @state)))
+  (swap! state assoc :active nil))
 
 (defn stop-active-groopse-handler [_ res]
   (stop-active-groopse)
   (.sendStatus ^js res 200))
 
-(defn create-groopse [req res]
-  (let [image-number (atom 1)
-        name (.-name (.-body req))
-        path (str js/__dirname "/" public-folder "/" image-folder "/" name "/" )
+(defn start-time [start]
+  (let [start-date (date/parse start "HH:mm" (new js/Date))]
+    (if (date/isValid start-date)
+      (Math/min
+       (- (.getTime (date/add start-date #js {:days 1}))
+          (.getTime (new js/Date)))
+       (- (.getTime start-date)
+          (.getTime (new js/Date))))
+      0)))
+
+
+(defn get-image-number [images-path]
+  (->> (map
+        #(js/parseInt (first (str/split % #"\.")))
+        (fs/readdirSync images-path))
+       (filter integer?)
+       sort
+       last
+       inc))
+
+(defn create-groopse [{:keys [name interval start]}]
+  (let [path (str js/__dirname "/" public-folder "/" image-folder "/" name "/" )
         video-path (str js/__dirname "/" public-folder "/" video-folder "/" name "/" )]
     (fs/mkdirSync path #js {:recursive true})
     (fs/mkdirSync video-path #js {:recursive true})
-    (-> (snap (str path (imagefile-name @image-number)))
-        (.then (fn []
-                 (swap! state assoc :active {:name name})
-                 (swap! image-number inc)
-                 (js/setTimeout
-                  (fn []
-                    (let [interval
-                          (js/setInterval
-                           (fn []
-                             (-> (snap (str path (imagefile-name @image-number)))
-                                 (.then (fn []
-                                          (prn "snap" (str path (imagefile-name @image-number)))
-                                          (swap! image-number inc)))
-                                 (.catch (fn [e]
-                                           (prn "SNAP ERROR: "e)
-                                           (js/clearInterval @current-interval)
-                                           (swap! state assoc :active :ERROR)))))
-                           (* 1000 60 10))]
-                      (reset! current-interval interval)))
-                  10000)
-                 (.sendStatus ^js res 200)))
-        (.catch (fn [e]
-                  (fs/rmdirSync path #js {:recursive true})
-                  (fs/rmdirSync video-path #js {:recursive true})
-                  (.status ^js res 500)
-                  (.send res (js->clj {:error (.-message e)})))))))
+    (let [start-offset (start-time start)]
+      (swap! state assoc :active {:name name
+                                  :state (if (> start-offset 0) "WAITING" "RUNNING")
+                                  :start start})
+      (prn "start in" (/ start-offset (* 1000 60)) "mins")
+      (let [timeout-id
+            (js/setTimeout
+             (fn []
+               (swap! state assoc-in [:active :state] "RUNNING")
+               (-> (snap (str path (imagefile-name (get-image-number path))))
+                   (.then (fn []
+                            (prn "first photo" (str path (imagefile-name (get-image-number path))))
+                            (swap! state assoc-in [:active :next] (date/format (date/add (new js/Date) #js {:minutes interval}) "HH:mm"))
+                            (let [interval-id
+                                  (js/setInterval
+                                   (fn []
+                                     (-> (snap (str path (imagefile-name (get-image-number path))))
+                                         (.then (fn []
+                                                  (swap! state assoc-in [:active :next]
+                                                         (date/format (date/add (new js/Date) #js {:minutes interval}) "HH:mm"))
+                                                  (prn "interval photo" (str path (imagefile-name (get-image-number path))))))
+                                         (.catch (fn [e]
+                                                   (prn "SNAP ERROR: "e)
+                                                   (js/clearInterval (:interval (:active @state)))
+                                                   (swap! state assoc :active :ERROR)))))
+                                   (* 1000 60 interval))]
+                              (swap! state assoc-in [:active :interval] interval-id))))
+                   (.catch (fn [e]
+                             (prn "SNAP ERROR: "e)
+                             (js/clearInterval (:interval (:active @state)))
+                             (swap! state assoc :active :ERROR)))))
+             start-offset)]
+        (swap! state assoc-in [:active :timeout] timeout-id)))))
 
 (defn delete-groopse [req res]
   (let [name (.-name ^js (.-params req))
@@ -144,7 +179,8 @@
 (defn load-all-groopse [req res]
     (.json res
          (clj->js
-          {:active (:active @state)
+          {:active (when (get-in @state [:active :name])
+                     (select-keys (:active @state) [:name :state :start :next]))
            :groopse
            (map (fn [folder-name]
                   {:name folder-name
@@ -220,7 +256,10 @@
     (.use app (cors))
     (.use app (.json express))
     (.use app (.static express "./public"))
-    (.post app "/groopse" create-groopse)
+    (.post app "/groopse"
+           (fn [req res]
+             (create-groopse (js->clj (.-body req) :keywordize-keys true))
+             (.sendStatus ^js res 200)))
     (.post app "/groopse/active/stop" stop-active-groopse-handler)
     (.get app "/groopse/:name" load-groopse)
     (.delete app "/groopse/:name" delete-groopse)

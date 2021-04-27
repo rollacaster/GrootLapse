@@ -42,7 +42,7 @@
     (if pending "Lade" children)]))
 
 (defn groopse-overview [{:keys [name image]}]
-  [:<> {:key image}
+  [:<> {:key (str name image)}
    [:> (.-Link router) {:class "w-1/2 p-4" :to (str "/" name)}
     [:img.rounded-2xl.mb-1 {:src image}]
     [:div.font-semibold.pl-1 name]]])
@@ -68,17 +68,23 @@
             max-images 5]
         [:div.p-4.relative
          [:button.mb-4 {:on-click (:goBack (:history props))} "< Back"]
-         [:div.flex.justify-between
+         [:div.flex.justify-between.mb-16
           [:h1.text-2xl.mb-4 (:name (:params (:match props)))]
           (when (= name (:name (:active @state)))
             [:div
-             [:span.text-xl.pr-3 "Live"]
-             [button {:on-click (fn []
-                                  (->(js/fetch (str "http://" server-name ":3000/groopse/active/stop")
-                                               (clj->js
-                                                {:method "POST"
-                                                 :headers {"Content-type" "application/json"}}))
-                                     (.then (fn [] (swap! state assoc :active nil)))))} "Stop"]])]
+             [:div.mb-2
+              [:span.text-xl.pr-3 (case (:state (:active @state))
+                                    "RUNNING" "Live"
+                                    "WAITING" "Warte")]
+              [button {:on-click (fn []
+                                   (->(js/fetch (str "http://" server-name ":3000/groopse/active/stop")
+                                                (clj->js
+                                                 {:method "POST"
+                                                  :headers {"Content-type" "application/json"}}))
+                                      (.then (fn [] (swap! state assoc :active nil)))))} "Stop"]]
+             [:div (case (:state (:active @state))
+                                    "RUNNING" (str "Nächstes Foto: " (:next (:active @state)))
+                                    "WAITING" (str "Start um: " (:start (:active @state)))) ]])]
          [:div.mb-8
           (when (> (count videos) 0)
             [:<>
@@ -176,9 +182,7 @@
 (defn input [{:keys [value on-change on-blur id name type class on-click ref]}]
   [:input.border.rounded.w-full.p-2.font-bold
    {:id id :type type :name name :class class
-    :value value :on-change (fn [e]
-                              (prn ^js (.-target.value e))
-                              (on-change e))
+    :value value :on-change on-change
     :on-blur on-blur
     :on-click on-click :ref ref}])
 
@@ -194,13 +198,12 @@
                                (when @stream-server
                                  (.stopStream ^js @stream-server)
                                  (reset! stream-server nil))
-                               (prn values)
                                (swap! state #(fork/set-submitting % path true))
                                (->(js/fetch (str "http://" server-name ":3000/groopse")
                                             (clj->js
                                              {:method "POST"
                                               :headers {"Content-type" "application/json"}
-                                              :body (js/JSON.stringify (clj->js {:name (get values "name")}))}))
+                                              :body (js/JSON.stringify (clj->js values))}))
                                   (.then (fn [res]
                                            (swap! state #(fork/set-submitting % path false))
                                            (if (.-ok res)
