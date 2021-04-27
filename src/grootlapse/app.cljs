@@ -179,10 +179,11 @@
                                                        :label (str "Groopse " name)}))}
           "Löschen"]]))))
 
-(defn input [{:keys [value on-change on-blur id name type class on-click ref]}]
+(defn input [{:keys [value on-change on-blur id name type class on-click ref placeholder]}]
   [:input.border.rounded.w-full.p-2.font-bold
    {:id id :type type :name name :class class
     :value value :on-change on-change
+    :placeholder placeholder
     :on-blur on-blur
     :on-click on-click :ref ref}])
 
@@ -193,7 +194,11 @@
                                    "interval" 10
                                    "start" ""}
                   :prevent-default? true
-                  :validation #(vlad/field-errors (vlad/join (vlad/attr ["name"] (vlad/present {:message "Bitte Name eingeben."}))) %)
+                  :validation #(vlad/field-errors
+                                (vlad/join (vlad/attr ["name"] (vlad/present {:message "Bitte Name eingeben."}))
+                                           (vlad/attr ["start"] (vlad/matches #"(^$|^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$)"
+                                                                              {:message "Format HH:MM"})))
+                                %)
                   :on-submit (fn [{:keys [state path values]}]
                                (when @stream-server
                                  (.stopStream ^js @stream-server)
@@ -244,7 +249,12 @@
               [:label.block.mb-2.pl-2 {:for "groopse-start"}
                "Start"]
               [:div
-               [input {:class "text-right" :type "time" :value (values "start") :on-change handle-change :name "start"}]]]]
+               [input {:id "groopse-start" :class "text-right" :type "time" :value (values "start")
+                       :on-change handle-change
+                       :placeholder "HH:MM"
+                       :name "start"}]
+               (when (touched "start")
+               [:div.text-red-400 (first (get errors (list "start")))])]]]
             [:div.relative.pb-16
              [:div.mb-2.pl-2 "Preview"]
              [button {:class "absolute"
