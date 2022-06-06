@@ -9,8 +9,8 @@
 
 (defonce stream-server (atom nil))
 (defonce state (r/atom {:groopse "LOADING"}))
-(def server-name "axidraw")
-(def server (str "http://" server-name ":3000"))
+(def server-name js/location.host)
+(def server js/location.origin)
 
 (defn icon [path size color]
   (let [sizes {:small 12 :medium 24 :large 48}]
