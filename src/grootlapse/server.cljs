@@ -13,18 +13,6 @@
 
 (def server-name "axidraw")
 
-(comment
-  (->(fetch "http://" server-name ":3000/groopse"
-            (clj->js
-             {:method "POST"
-              :headers {"Content-type" "application/json"}
-              :body (js/JSON.stringify (clj->js {:name "flower"}))}))
-     (.catch prn))
-  (-> (fetch "http://" server-name ":3000/groopse/blume"
-             (clj->js
-             {:headers {"Content-type" "application/json"}}))
-      (.then (fn [res] (.json res)))
-      (.then prn)))
 
 (defonce server-ref (volatile! nil))
 (defonce state (atom {:active nil}))
@@ -148,7 +136,7 @@
   (let [name (.-name ^js (.-params req))]
     (.json res (clj->js
                 (->> (fs/readdirSync (str public-folder "/" image-folder "/" name))
-                     (map (fn [file-name] (str "http://" server-name ":3000/" image-folder "/" name "/" file-name))))))))
+                     (map (fn [file-name] (str "/" image-folder "/" name "/" file-name))))))))
 
 (def stitch-interval (atom nil))
 (defn stitch-groopse [req res]
@@ -164,7 +152,7 @@
       (process/spawnSync
        "ffmpeg" (into-array ["-r" "10" "-i" (str public-folder "/" image-folder "/" name "/%5d.jpg") "-r" "10" "-vcodec" "libx264" "-crf" "20" "-g" "15"
                              (str public-folder "/" path "/" (videofile-name video-nr))]))
-      (if (fs/accessSync (str public-folder "/" path "/" (videofile-name video-nr)))
+      (try (fs/accessSync (str public-folder "/" path "/" (videofile-name video-nr)))
         (reset! stitch-interval
                 (js/setInterval (fn [] (try
                                         (fs/accessSync (str public-folder "/" path "/" (videofile-name video-nr)))
@@ -174,7 +162,9 @@
                                         (catch js/Error e
                                           (prn e))))
                                 1000))
-        (.json res (str "http://" server-name ":3000/" path "/" (videofile-name video-nr)))))))
+        (catch js/Error e
+          (prn e)
+          (.json res (str "/" path "/" (videofile-name video-nr))))))))
 
 (defn load-all-groopse [req res]
     (.json res
@@ -186,16 +176,16 @@
                   {:name folder-name
                    :image (try
                             (fs/accessSync (str public-folder "/" image-folder "/" folder-name "/00001.jpg"))
-                            (str "http://" server-name ":3000/" image-folder "/" folder-name "/00001.jpg")
+                            (str "/" image-folder "/" folder-name "/00001.jpg")
                             (catch js/Error _
-                                (str "http://" server-name ":3000/default.png")))
+                                (str "/default.png")))
                    :images (map
                             (fn [file-name]
-                              (str "http://" server-name ":3000/" image-folder "/" folder-name "/" file-name))
+                              (str "/" image-folder "/" folder-name "/" file-name))
                             (fs/readdirSync (str public-folder "/" image-folder "/" folder-name)))
                    :videos (map
                             (fn [file-name]
-                              (str "http://" server-name ":3000/" video-folder "/" folder-name "/" file-name))
+                              (str "/" video-folder "/" folder-name "/" file-name))
                             (fs/readdirSync (str public-folder "/" video-folder "/" folder-name)))})
                 (fs/readdirSync (str public-folder "/" image-folder)))})))
 

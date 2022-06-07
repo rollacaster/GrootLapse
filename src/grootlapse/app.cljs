@@ -49,7 +49,7 @@
 (def canvas-ref (atom nil))
 
 (defn load-groopse []
-  (-> (js/fetch (str server "/groopse"))
+  (-> (js/fetch (str "/groopse"))
       (.then (fn [res] (.json res)))
       (.then (fn [json] (swap! state merge (js->clj json :keywordize-keys true))))
       (.catch (fn [] (swap! state assoc :groopse "ERROR")))))
@@ -77,7 +77,7 @@
                                     "RUNNING" "Live"
                                     "WAITING" "Warte")]
               [button {:on-click (fn []
-                                   (->(js/fetch (str "http://" server-name ":3000/groopse/active/stop")
+                                   (->(js/fetch (str "/groopse/active/stop")
                                                 (clj->js
                                                  {:method "POST"
                                                   :headers {"Content-type" "application/json"}}))
@@ -116,7 +116,7 @@
                     :on-click
                     (fn []
                       (reset! details-state "STITCHING")
-                      (->(js/fetch (str "http://" server-name ":3000/groopse/" name "/stitch")
+                      (->(js/fetch (str "/groopse/" name "/stitch")
                                    (clj->js
                                     {:headers {"Content-type" "application/json"}}))
                          (.then (fn [res] (.json res)))
@@ -129,16 +129,18 @@
                                                                                   groopses)))))))}
             "Video erstellen"]]
           [:div.flex.flex-wrap.justify-between
-           (map
-            (fn [image]
-              [:div.relative {:key image :style {:width "49%"}}
-               [:img.mb-2.border {:src image}]
-               [button {:class "absolute" :style {:top "0.5rem" :right "0.5rem"}
-                        :on-click (fn [] (reset! delete-mode {:type :image
-                                                             :label (str "Bild " (s/join "/" (take-last 2 (s/split image #"/"))))
-                                                             :name (apply str (take-last 1 (s/split image #"/")))}))}
-                [trash-icon :small "white"]]])
-            (take (if @show-all-images (count images) max-images) images))]
+           (->> images
+                reverse
+                (take (if @show-all-images (count images) max-images))
+                (map
+                 (fn [image]
+                   [:div.relative {:key image :style {:width "49%"}}
+                    [:img.mb-2.border {:src image}]
+                    [button {:class "absolute" :style {:top "0.5rem" :right "0.5rem"}
+                             :on-click (fn [] (reset! delete-mode {:type :image
+                                                                  :label (str "Bild " (s/join "/" (take-last 2 (s/split image #"/"))))
+                                                                  :name (apply str (take-last 1 (s/split image #"/")))}))}
+                     [trash-icon :small "white"]]])))]
           [:div.w-full.flex.justify-center.pb-5
            (when (and (not @show-all-images) (> (count images) max-images))
              [button {:on-click (fn [] (reset! show-all-images true))}
@@ -156,9 +158,9 @@
                                    (reset! deleting true)
                                    (->
                                     (js/fetch (case (:type @delete-mode)
-                                                :groopse (str "http://" server-name ":3000/groopse/" name)
-                                                :video (str "http://" server-name ":3000/groopse/" name "/video/" (:name @delete-mode))
-                                                :image (str "http://" server-name ":3000/groopse/" name "/image/" (:name @delete-mode)))
+                                                :groopse (str "/groopse/" name)
+                                                :video (str "/groopse/" name "/video/" (:name @delete-mode))
+                                                :image (str "/groopse/" name "/image/" (:name @delete-mode)))
                                                 (clj->js
                                                  {:headers {"Content-type" "application/json"}
                                                   :method "DELETE"}))
@@ -204,7 +206,7 @@
                                  (.stopStream ^js @stream-server)
                                  (reset! stream-server nil))
                                (swap! state #(fork/set-submitting % path true))
-                               (->(js/fetch (str "http://" server-name ":3000/groopse")
+                               (->(js/fetch (str "/groopse")
                                             (clj->js
                                              {:method "POST"
                                               :headers {"Content-type" "application/json"}
@@ -262,7 +264,7 @@
                               :display (when @preview "none")}
                       :on-click (fn []
                                   (when (and @canvas-ref (= nil @stream-server))
-                                    (let [uri (str "ws://" server-name ":3000")
+                                    (let [uri (str "ws" (when (= js/location.protocol "https:") "s") "://" server-name)
                                           wsavc (js/window.WSAvcPlayer. @canvas-ref "webgl" 1 35)]
                                       (.connect wsavc uri)
                                       (reset! stream-server wsavc)))
@@ -306,7 +308,7 @@
                                              image))
                                          (:groopse @state))}]
          [button {:on-click (fn []
-                              (->(js/fetch (str "http://" server-name ":3000/groopse/active/stop")
+                              (->(js/fetch (str "/groopse/active/stop")
                                            (clj->js
                                             {:method "POST"
                                              :headers {"Content-type" "application/json"}}))
@@ -355,13 +357,13 @@
 (defn init [])
 
 (comment
-  (->(js/fetch (str "http://" server-name ":3000/groopse")
+  (->(js/fetch (str "/groopse")
                (clj->js
                 {:method "POST"
                  :headers {"Content-type" "application/json"}
                  :body (js/JSON.stringify (clj->js {:name "flower5"}))}))
      (.catch prn))
-  (->(js/fetch (str "http://" server-name ":3000/groopse/flower3/stitch")
+  (->(js/fetch (str "/groopse/flower3/stitch")
                (clj->js
                 {:headers {"Content-type" "application/json"}}))
      (.then (fn [res] (.json res)))
