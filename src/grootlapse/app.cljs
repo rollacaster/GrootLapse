@@ -54,6 +54,13 @@
       (.then (fn [json] (swap! state merge (js->clj json :keywordize-keys true))))
       (.catch (fn [] (swap! state assoc :groopse "ERROR")))))
 
+(defn start-groopse [values]
+  (js/fetch (str "/groopse")
+            (clj->js
+             {:method "POST"
+              :headers {"Content-type" "application/json"}
+              :body (js/JSON.stringify (clj->js values))})))
+
 (defn groopse-details []
   (let [video-errors (r/atom #{})
         details-state (r/atom nil)
@@ -70,7 +77,7 @@
          [:button.mb-4 {:on-click (:goBack (:history props))} "< Back"]
          [:div.flex.justify-between.mb-16
           [:h1.text-2xl.mb-4 (:name (:params (:match props)))]
-          (when (= name (:name (:active @state)))
+          (if (= name (:name (:active @state)))
             [:div
              [:div.mb-2
               [:span.text-xl.pr-3 (case (:state (:active @state))
@@ -83,8 +90,17 @@
                                                   :headers {"Content-type" "application/json"}}))
                                       (.then (fn [] (swap! state assoc :active nil)))))} "Stop"]]
              [:div (case (:state (:active @state))
-                                    "RUNNING" (str "Nächstes Foto: " (:next (:active @state)))
-                                    "WAITING" (str "Start um: " (:start (:active @state)))) ]])]
+                     "RUNNING" (str "Nächstes Foto: " (:next (:active @state)))
+                     "WAITING" (str "Start um: " (:start (:active @state)))) ]]
+            [button {:on-click (fn [] (-> (start-groopse {"name" name
+                                                         "interval" 10
+                                                         "start" ""})
+                                         (.then (fn [res]
+                                                  (when (.-ok res)
+                                                    (load-groopse)
+                                                    ((:push (:history props)) (str "/" name)))))
+                                         (.catch js/console.log)))}
+             "Fortsetzen"])]
          [:div.mb-8
           (when (> (count videos) 0)
             [:<>
@@ -206,23 +222,19 @@
                                  (.stopStream ^js @stream-server)
                                  (reset! stream-server nil))
                                (swap! state #(fork/set-submitting % path true))
-                               (->(js/fetch (str "/groopse")
-                                            (clj->js
-                                             {:method "POST"
-                                              :headers {"Content-type" "application/json"}
-                                              :body (js/JSON.stringify (clj->js values))}))
-                                  (.then (fn [res]
-                                           (swap! state #(fork/set-submitting % path false))
-                                           (if (.-ok res)
-                                             (do
-                                               (load-groopse)
-                                               ((:push (:history props)) "/"))
-                                             (fork/set-server-message state path "Etwas ist schiefgelaufen!"))))
-                                  (.catch (fn []
-                                            (swap! state (fn [state]
-                                                           (-> state
-                                                               (fork/set-server-message path "Kein Verbindung zu Groot")
-                                                               (fork/set-submitting path false))))))))}
+                               (-> (start-groopse values)
+                                   (.then (fn [res]
+                                            (swap! state #(fork/set-submitting % path false))
+                                            (if (.-ok res)
+                                              (do
+                                                (load-groopse)
+                                                ((:push (:history props)) "/"))
+                                              (fork/set-server-message state path "Etwas ist schiefgelaufen!"))))
+                                   (.catch (fn []
+                                             (swap! state (fn [state]
+                                                            (-> state
+                                                                (fork/set-server-message path "Kein Verbindung zu Groot")
+                                                                (fork/set-submitting path false))))))))}
        (let [preview (r/atom false)]
          (fn [{:keys [form-id values handle-submit handle-change handle-blur submitting? errors
                      on-submit-server-message touched]}]
